@@ -1,0 +1,315 @@
+{
+  "title": "Synthetic public-records search corpus",
+  "created_at": "2026-10-26",
+  "mode": "synthetic",
+  "notice": "All documents are invented for this prototype. No Bellevue or other public documents were downloaded.",
+  "records": [
+    {
+      "id": "R-001",
+      "title": "Roadway right-of-way work notice",
+      "department": "Transportation",
+      "type": "Public notice",
+      "date": "2024-03-14",
+      "text": "A temporary right-of-way use permit was issued for utility work along Cedar Avenue. The notice describes a lane closure, detour routing, work hours, and restoration responsibilities.",
+      "terms": [
+        "right-of-way work",
+        "lane closure",
+        "detour",
+        "utility work"
+      ],
+      "source_url": null,
+      "retrieved_at": null,
+      "synthetic": true
+    },
+    {
+      "id": "R-002",
+      "title": "Cedar Avenue utility coordination email",
+      "department": "Transportation",
+      "type": "Email",
+      "date": "2024-04-02",
+      "text": "Project staff discussed the schedule for underground utility construction and traffic control on Cedar Avenue. Crews planned to close one travel lane overnight and post a signed detour.",
+      "terms": [
+        "right-of-way work",
+        "lane closure",
+        "detour",
+        "construction"
+      ],
+      "source_url": null,
+      "retrieved_at": null,
+      "synthetic": true
+    },
+    {
+      "id": "R-003",
+      "title": "Annual sidewalk repair contract",
+      "department": "Public Works",
+      "type": "Contract",
+      "date": "2024-02-21",
+      "text": "The city awarded a contract for sidewalk panel replacement and curb ramp work. The contractor must maintain pedestrian access and coordinate any temporary street occupancy.",
+      "terms": [
+        "sidewalk",
+        "repair",
+        "contract",
+        "street occupancy"
+      ],
+      "source_url": null,
+      "retrieved_at": null,
+      "synthetic": true
+    },
+    {
+      "id": "R-004",
+      "title": "Neighborhood traffic calming meeting notes",
+      "department": "Transportation",
+      "type": "Meeting notes",
+      "date": "2023-11-08",
+      "text": "Residents discussed speeding, crosswalk visibility, and possible traffic calming on Pine Street. Staff will review speed data before recommending changes.",
+      "terms": [
+        "traffic",
+        "speeding",
+        "neighborhood",
+        "crosswalk"
+      ],
+      "source_url": null,
+      "retrieved_at": null,
+      "synthetic": true
+    },
+    {
+      "id": "R-005",
+      "title": "Permit review checklist for public right-of-way",
+      "department": "Development Services",
+      "type": "Policy",
+      "date": "2024-01-10",
+      "text": "The review checklist covers excavation permits, temporary use of public right-of-way, utility coordination, restoration, and traffic management plans.",
+      "terms": [
+        "right-of-way work",
+        "permit",
+        "excavation",
+        "utility",
+        "traffic management"
+      ],
+      "source_url": null,
+      "retrieved_at": null,
+      "synthetic": true
+    },
+    {
+      "id": "R-006",
+      "title": "Stormwater inspection summary",
+      "department": "Utilities",
+      "type": "Report",
+      "date": "2024-05-06",
+      "text": "Inspectors recorded maintenance needs at two drainage inlets after spring rainfall. Follow-up work included debris removal and a check of nearby catch basins.",
+      "terms": [
+        "stormwater",
+        "drainage",
+        "maintenance",
+        "inspection"
+      ],
+      "source_url": null,
+      "retrieved_at": null,
+      "synthetic": true
+    },
+    {
+      "id": "R-007",
+      "title": "Parks maintenance work order summary",
+      "department": "Parks",
+      "type": "Work order",
+      "date": "2024-06-18",
+      "text": "A crew completed trail surface repairs and replaced damaged signage near the community garden. The work order includes labor hours and materials used.",
+      "terms": [
+        "parks",
+        "trail",
+        "repair",
+        "maintenance"
+      ],
+      "source_url": null,
+      "retrieved_at": null,
+      "synthetic": true
+    },
+    {
+      "id": "R-008",
+      "title": "Public works weekly project update",
+      "department": "Public Works",
+      "type": "Report",
+      "date": "2024-03-29",
+      "text": "The weekly update summarizes active capital projects, construction coordination, sidewalk improvements, and planned utility work across several neighborhoods.",
+      "terms": [
+        "construction",
+        "utility work",
+        "sidewalk",
+        "project update"
+      ],
+      "source_url": null,
+      "retrieved_at": null,
+      "synthetic": true
+    },
+    {
+      "id": "R-009",
+      "title": "Street use permit application guide",
+      "department": "Transportation",
+      "type": "Guide",
+      "date": "2023-09-12",
+      "text": "Applicants seeking temporary street use must provide a work schedule, traffic control plan, insurance details, and a map showing the requested closure limits.",
+      "terms": [
+        "street closure",
+        "street use",
+        "permit",
+        "traffic control"
+      ],
+      "source_url": null,
+      "retrieved_at": null,
+      "synthetic": true
+    },
+    {
+      "id": "R-010",
+      "title": "Council packet: neighborhood mobility",
+      "department": "City Clerk",
+      "type": "Council packet",
+      "date": "2024-02-13",
+      "text": "The council packet includes a presentation about neighborhood mobility, safer crossings, sidewalk gaps, and a proposed process for prioritizing transportation projects.",
+      "terms": [
+        "mobility",
+        "sidewalk",
+        "crossings",
+        "transportation"
+      ],
+      "source_url": null,
+      "retrieved_at": null,
+      "synthetic": true
+    },
+    {
+      "id": "R-011",
+      "title": "Utility construction public outreach flyer",
+      "department": "Utilities",
+      "type": "Public notice",
+      "date": "2024-04-12",
+      "text": "A public flyer explains planned water main replacement, temporary parking restrictions, construction noise, and how residents can contact the project team.",
+      "terms": [
+        "utility work",
+        "construction",
+        "parking",
+        "water main"
+      ],
+      "source_url": null,
+      "retrieved_at": null,
+      "synthetic": true
+    },
+    {
+      "id": "R-012",
+      "title": "Records retention schedule: project files",
+      "department": "City Clerk",
+      "type": "Schedule",
+      "date": "2022-07-01",
+      "text": "The schedule describes retention periods for project correspondence, permit files, inspection reports, meeting records, and contract documentation.",
+      "terms": [
+        "project files",
+        "records",
+        "retention",
+        "permit"
+      ],
+      "source_url": null,
+      "retrieved_at": null,
+      "synthetic": true
+    },
+    {
+      "id": "R-013",
+      "title": "Bicycle lane striping field notes",
+      "department": "Transportation",
+      "type": "Field notes",
+      "date": "2024-07-24",
+      "text": "Field notes document pavement marking installation, temporary lane shifts, crew coordination, and sign placement along the corridor.",
+      "terms": [
+        "lane shift",
+        "road work",
+        "striping",
+        "traffic control"
+      ],
+      "source_url": null,
+      "retrieved_at": null,
+      "synthetic": true
+    },
+    {
+      "id": "R-014",
+      "title": "Downtown event street closure plan",
+      "department": "Transportation",
+      "type": "Plan",
+      "date": "2023-08-04",
+      "text": "The event plan lists street closure hours, barricade locations, detours, emergency access routes, and coordination with transit operators.",
+      "terms": [
+        "street closure",
+        "detour",
+        "event",
+        "emergency access"
+      ],
+      "source_url": null,
+      "retrieved_at": null,
+      "synthetic": true
+    },
+    {
+      "id": "R-015",
+      "title": "Water service interruption notice",
+      "department": "Utilities",
+      "type": "Public notice",
+      "date": "2024-01-30",
+      "text": "Residents were notified of planned water service interruption during valve replacement. The notice provides an expected work window and restoration updates.",
+      "terms": [
+        "water service",
+        "valve",
+        "repair",
+        "notice"
+      ],
+      "source_url": null,
+      "retrieved_at": null,
+      "synthetic": true
+    },
+    {
+      "id": "R-016",
+      "title": "Building permit review correspondence",
+      "department": "Development Services",
+      "type": "Email",
+      "date": "2024-05-21",
+      "text": "Reviewers exchanged comments on a commercial building permit, including site access, construction staging, and utility connection plans.",
+      "terms": [
+        "building permit",
+        "construction",
+        "utility",
+        "site access"
+      ],
+      "source_url": null,
+      "retrieved_at": null,
+      "synthetic": true
+    },
+    {
+      "id": "R-017",
+      "title": "Traffic signal maintenance log",
+      "department": "Transportation",
+      "type": "Maintenance log",
+      "date": "2024-08-03",
+      "text": "Technicians recorded a signal cabinet inspection, replaced a damaged component, and verified pedestrian crossing timing at the intersection.",
+      "terms": [
+        "traffic signal",
+        "maintenance",
+        "inspection",
+        "crossing"
+      ],
+      "source_url": null,
+      "retrieved_at": null,
+      "synthetic": true
+    },
+    {
+      "id": "R-018",
+      "title": "Cedar Avenue project closeout summary",
+      "department": "Public Works",
+      "type": "Report",
+      "date": "2024-09-09",
+      "text": "The closeout summary covers final paving, restoration of the roadway after utility construction, invoice review, and acceptance of completed work.",
+      "terms": [
+        "Cedar Avenue",
+        "roadway",
+        "utility construction",
+        "restoration"
+      ],
+      "source_url": null,
+      "retrieved_at": null,
+      "synthetic": true
+    }
+  ]
+}

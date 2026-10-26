@@ -1,0 +1,241 @@
+{
+  "notice": "All request scenarios and provisional relevance labels are invented. Human review is not complete.",
+  "scenarios": [
+    {
+      "id": "syn-1",
+      "label": "Different wording · road closure",
+      "type": "Different wording",
+      "request": "Please send records about the road closure on Cedar Avenue while utility crews did their work.",
+      "topics": "road closure",
+      "alternate": "Cedar Avenue, utility work, lane closure, right-of-way work, detour",
+      "relevant": [
+        "R-001",
+        "R-002",
+        "R-005",
+        "R-008",
+        "R-009",
+        "R-011",
+        "R-018"
+      ]
+    },
+    {
+      "id": "syn-2",
+      "label": "Different wording · work zone",
+      "type": "Different wording",
+      "request": "Find plans for the temporary work zone and alternate route during street construction.",
+      "topics": "work zone, alternate route, street construction",
+      "alternate": "road work, detour, lane closure",
+      "relevant": [
+        "R-001",
+        "R-002",
+        "R-009",
+        "R-013",
+        "R-014"
+      ]
+    },
+    {
+      "id": "syn-3",
+      "label": "Different wording · water pipe",
+      "type": "Different wording",
+      "request": "I need notices about crews replacing the water pipe and interrupting service.",
+      "topics": "water pipe replacement, service interruption",
+      "alternate": "water main, utility construction, valve replacement",
+      "relevant": [
+        "R-011",
+        "R-015"
+      ]
+    },
+    {
+      "id": "syn-4",
+      "label": "Different wording · pedestrian access",
+      "type": "Different wording",
+      "request": "Show records about safer walking routes and curb ramps near the neighborhood streets.",
+      "topics": "walking routes, curb ramps, neighborhood streets",
+      "alternate": "sidewalk, pedestrian access, crosswalk",
+      "relevant": [
+        "R-003",
+        "R-004",
+        "R-010"
+      ]
+    },
+    {
+      "id": "syn-5",
+      "label": "Different wording · drainage",
+      "type": "Different wording",
+      "request": "Find inspection records for rainwater drains and catch basins after storms.",
+      "topics": "rainwater drains, catch basins, storm inspection",
+      "alternate": "stormwater, drainage inlet, rainfall",
+      "relevant": [
+        "R-006"
+      ]
+    },
+    {
+      "id": "syn-6",
+      "label": "Different wording · site access",
+      "type": "Different wording",
+      "request": "Find correspondence about getting a construction site connected to utilities and keeping access open.",
+      "topics": "construction site, utility connections, access",
+      "alternate": "building permit, site access, staging",
+      "relevant": [
+        "R-016"
+      ]
+    },
+    {
+      "id": "exact-1",
+      "label": "Exact keywords · traffic signal",
+      "type": "Exact keyword",
+      "request": "Find the traffic signal maintenance log and pedestrian crossing timing inspection from 2024.",
+      "topics": "traffic signal, maintenance log, pedestrian crossing, inspection",
+      "date": "2024",
+      "relevant": [
+        "R-017"
+      ]
+    },
+    {
+      "id": "exact-2",
+      "label": "Exact keywords · Cedar Avenue email",
+      "type": "Exact keyword",
+      "request": "Find the Cedar Avenue utility coordination email dated April 2, 2024.",
+      "topics": "Cedar Avenue, utility coordination, email",
+      "date": "2024",
+      "relevant": [
+        "R-002"
+      ]
+    },
+    {
+      "id": "exact-3",
+      "label": "Exact keywords · permit checklist",
+      "type": "Exact keyword",
+      "request": "Find the public right-of-way permit review checklist.",
+      "topics": "public right-of-way, permit review checklist",
+      "relevant": [
+        "R-005"
+      ]
+    },
+    {
+      "id": "exact-4",
+      "label": "Exact keywords · stormwater",
+      "type": "Exact keyword",
+      "request": "Find the stormwater inspection summary from May 2024.",
+      "topics": "stormwater inspection summary",
+      "date": "2024",
+      "relevant": [
+        "R-006"
+      ]
+    },
+    {
+      "id": "exact-5",
+      "label": "Exact keywords · parks work order",
+      "type": "Exact keyword",
+      "request": "Find the parks maintenance work order summary from June 2024.",
+      "topics": "parks maintenance work order summary",
+      "date": "2024",
+      "relevant": [
+        "R-007"
+      ]
+    },
+    {
+      "id": "exact-6",
+      "label": "Exact keywords · council packet",
+      "type": "Exact keyword",
+      "request": "Find the council packet about neighborhood mobility and sidewalk gaps.",
+      "topics": "council packet neighborhood mobility sidewalk gaps",
+      "relevant": [
+        "R-010"
+      ]
+    },
+    {
+      "id": "vague-1",
+      "label": "Broad request · city projects",
+      "type": "Vague request",
+      "request": "I want all records about city projects.",
+      "topics": "city projects, project files",
+      "needsClarification": true,
+      "relevant": [
+        "R-003",
+        "R-005",
+        "R-008",
+        "R-010",
+        "R-012",
+        "R-016",
+        "R-018"
+      ]
+    },
+    {
+      "id": "vague-2",
+      "label": "Broad request · permits",
+      "type": "Vague request",
+      "request": "Send me everything about permits.",
+      "topics": "permits",
+      "needsClarification": true,
+      "relevant": [
+        "R-003",
+        "R-005",
+        "R-009",
+        "R-012",
+        "R-016"
+      ]
+    },
+    {
+      "id": "vague-3",
+      "label": "Broad request · maintenance",
+      "type": "Vague request",
+      "request": "I want all the records about maintenance.",
+      "topics": "maintenance",
+      "needsClarification": true,
+      "relevant": [
+        "R-006",
+        "R-007",
+        "R-017",
+        "R-015"
+      ]
+    },
+    {
+      "id": "vague-4",
+      "label": "Broad request · transportation",
+      "type": "Vague request",
+      "request": "Give me all transportation records.",
+      "topics": "transportation",
+      "needsClarification": true,
+      "relevant": [
+        "R-001",
+        "R-002",
+        "R-004",
+        "R-009",
+        "R-010",
+        "R-013",
+        "R-014",
+        "R-017"
+      ]
+    },
+    {
+      "id": "vague-5",
+      "label": "Broad request · utilities",
+      "type": "Vague request",
+      "request": "I need every record related to utilities.",
+      "topics": "utilities",
+      "needsClarification": true,
+      "relevant": [
+        "R-002",
+        "R-006",
+        "R-011",
+        "R-015",
+        "R-016",
+        "R-018"
+      ]
+    },
+    {
+      "id": "vague-6",
+      "label": "Broad request · neighborhood",
+      "type": "Vague request",
+      "request": "Please provide all records about neighborhoods.",
+      "topics": "neighborhood",
+      "needsClarification": true,
+      "relevant": [
+        "R-004",
+        "R-010",
+        "R-014"
+      ]
+    }
+  ]
+}

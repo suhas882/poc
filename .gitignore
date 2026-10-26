@@ -1,0 +1,6 @@
+cloudflared.exe
+*.log
+feedback.jsonl
+tmp/
+.video-build/
+node_modules/
