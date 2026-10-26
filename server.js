@@ -4,7 +4,7 @@ const http = require('node:http');
 const os = require('node:os');
 
 const root = __dirname;
-const port = Number(process.env.POC_PORT || 8765);
+const port = Number(process.env.PORT || process.env.POC_PORT || 8765);
 const feedbackPath = path.join(root, 'feedback.jsonl');
 const allowedFiles = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],

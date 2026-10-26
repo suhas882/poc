@@ -16,6 +16,12 @@ node server.js
 
 No packages are required. The server prints a local URL and same-network URL. The demo is split into four pages: Request & Plan (`/`), Search Results (`/search.html`), Evaluation (`/evaluation.html`), and Pilot & Feedback (`/workflow.html`). The request and plan persist in browser storage between pages. The server has no login, so anyone who can reach its URL can submit comments. Feedback is appended to `feedback.jsonl` in this folder. Stop the server with Ctrl+C.
 
+## Deploy on Render
+
+The repository includes `render.yaml`. In Render, create a Blueprint from `https://github.com/suhas882/poc` and select the `master` branch, or create a Web Service from that repository with build command `node --check server.js && node --check app.js`, start command `node server.js`, and health check path `/api/health`. The server binds to Render's `PORT` and `0.0.0.0`.
+
+Feedback currently writes to `feedback.jsonl` on the server filesystem. Render's default filesystem is ephemeral, so use a persistent disk or a database if feedback must survive service restarts and redeploys. The demo has no authentication; anyone who can access its public URL can submit feedback. Keep the corpus synthetic and do not enter city or requester data.
+
 ## Included flows
 
 - 18 invented requests in three groups, with synthetic relevant-record labels.

@@ -1,0 +1,8 @@
+services:
+  - type: web
+    name: public-records-ai-search-poc
+    runtime: node
+    plan: free
+    buildCommand: node --check server.js && node --check app.js
+    startCommand: node server.js
+    healthCheckPath: /api/health
