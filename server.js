@@ -12,6 +12,9 @@ const allowedFiles = new Map([
   ['/search.html', ['search.html', 'text/html; charset=utf-8']],
   ['/evaluation.html', ['evaluation.html', 'text/html; charset=utf-8']],
   ['/workflow.html', ['workflow.html', 'text/html; charset=utf-8']],
+  ['/POC-VIDEO.html', ['POC-VIDEO.html', 'text/html; charset=utf-8']],
+  ['/PITCH-VIDEO-SCRIPT.md', ['PITCH-VIDEO-SCRIPT.md', 'text/markdown; charset=utf-8']],
+  ['/video-output/bellevue-public-records-poc-walkthrough.mp4', ['video-output/bellevue-public-records-poc-walkthrough.mp4', 'video/mp4']],
   ['/styles.css', ['styles.css', 'text/css; charset=utf-8']],
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']]
 ]);

@@ -17,7 +17,7 @@ The app contains 18 invented requests: six exact-keyword, six different-wording,
 | Choose corpus and log provenance | 18 synthetic records with full text, source URL and retrieval-date fields in `demo-corpus.json` | Implemented as a synthetic substitute. No Bellevue or JLARC files were downloaded. |
 | Create 15 to 20 invented requests | 18 scenarios in `demo-requests.json` | Implemented, with six exact, six different-wording, and six vague requests. |
 | Double label and adjudicate | In-app Reviewer 1, Reviewer 2, and Adjudicator views; CSV export | Workflow implemented. Human independent labels and adjudication remain to be completed. The local UI cannot verify reviewer identity. |
-| Compare keyword and hybrid | `benchmark.js` runs plain keyword and synonym-expanded keyword over all scenarios, with recall/precision at 10 and 50, first relevant rank, and local ranking latency | Implemented as a lexical prototype benchmark. This is not embedding-based semantic retrieval and not the 1.2 production hybrid pipeline. Results use provisional labels. |
+| Compare keyword and hybrid | `benchmark.js` runs plain keyword and synonym-expanded keyword over all scenarios, with recall/precision at 10 and 50, first relevant rank, per-request time to first relevant result, and request-type means | Implemented as a lexical prototype benchmark. This is not embedding-based semantic retrieval and not the 1.2 production hybrid pipeline. Results use provisional labels. |
 | Build staff screens and export log | Editable, confirmable search plan; clarification drafts; repository filter; ranked results with reason and passage; staff marks/notes; synthetic coordinator route; session log and JSON export | Implemented for synthetic records. Routing is simulated. There is no persistent city audit store. |
 | Accessibility review | Semantic structure, explicit form labels, keyboard focus indication, responsive layout, and live feedback status | UI is described as WCAG 2.1 AA-aligned. SureAccess scan and Vikram Kamble review are not completed. |
 
@@ -27,7 +27,7 @@ The brief describes an LLM-generated plan and ranking reasons, embedding-based s
 
 ## Benchmark
 
-Run `node benchmark.js` to compare plain keyword ranking with synonym-expanded keyword ranking across all 18 scenarios. It reports recall and precision at 10 and 50, first relevant rank, and local ranking time. Vague scenarios are included for retrieval metrics but also require staff clarification. With only 18 documents, top 50 means the full corpus. Runtime is not staff time. All figures are synthetic and are target outcomes to be validated during discovery.
+Run `node benchmark.js` to compare plain keyword ranking with synonym-expanded keyword ranking across all 18 scenarios. It reports recall and precision at 10 and 50, first relevant rank, per-request time to first relevant result, and means by request type. Vague scenarios are included for retrieval metrics but also require staff clarification. With only 18 documents, top 50 means the full corpus. Runtime is not staff time. All figures are synthetic and are target outcomes to be validated during discovery.
 
 ## Interface and review
 
@@ -35,7 +35,7 @@ The app provides request editing, editable plan fields and clarification questio
 
 ## Accessibility
 
-The interface uses semantic headings, explicit form labels, keyboard focus indicators, responsive layout, and live feedback status. This is an implementation checklist, not a SureAccess scan or conformance finding. A SureAccess scan and Vikram Kamble review are still required; record findings and fixes here after they occur. Describe the interface as WCAG 2.1 AA-aligned. Do not claim compliant or certified.
+The interface uses semantic headings, explicit form labels, keyboard focus indicators, responsive layout, and live feedback status. This is an implementation checklist, not a SureAccess scan or conformance finding. A SureAccess scan and Vikram Kamble review are validation tasks; record findings and fixes here after they occur. Describe the interface as WCAG 2.1 AA-aligned. Do not claim compliant or certified.
 
 ## Remaining evidence gates
 

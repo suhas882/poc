@@ -35,11 +35,13 @@ Feedback currently writes to `feedback.jsonl` on the server filesystem. Render's
 - Synthetic repository filter and a synthetic coordinator routing interaction. It does not assign work to a person.
 - Editable clarification-question drafts and explicit search-plan confirmation before search.
 - Full 18-scenario evaluation and JSON export. This runs the local lexical prototype, not embeddings or an LLM.
+- Per-scenario and request-type comparisons include recall and precision at 10 and 50, first relevant rank, and local time-to-first-relevant result. The ranking-time measure is not staff time.
 - Tier 0/1/2 and proposed milestone/KPI simulator. Later tiers do not grant access to any city data.
 - Basic page-structure accessibility self-check. It is not SureAccess.
 - Feedback form with an optional name; submissions are validated and saved locally by the Node server.
 - Responsive layout, keyboard focus styles, labels, and WCAG 2.1 AA-aligned intent. This is not a compliance claim or completed accessibility audit.
 - Four separate navigable pages for request planning, ranked results, evaluation/label review, and pilot planning/feedback.
+- A two-minute, captioned browser video builder and a short MP4 walkthrough, both using synthetic examples only.
 
 ## Core checks
 

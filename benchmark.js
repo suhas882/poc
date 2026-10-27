@@ -27,5 +27,11 @@ for (const type of ['Exact keyword','Different wording','Vague request']) {
   const rows=result.scenarios.filter(s=>scenarios.find(x=>x.id===s.id).type===type);
   result[type]={count:rows.length};
   for (const method of ['keyword','synonym_expanded']) for (const metric of ['recall_at_10','precision_at_10','recall_at_50','precision_at_50']) result[type][`${method}_${metric}`]=Number((rows.reduce((a,r)=>a+r[method][metric],0)/rows.length).toFixed(1));
+  for (const method of ['keyword','synonym_expanded']) {
+    const ranks=rows.map(r=>r[method].first_relevant_rank).filter(Number.isFinite);
+    const times=rows.map(r=>r[method].time_to_first_relevant_ms).filter(Number.isFinite);
+    result[type][`${method}_mean_first_relevant_rank`]=ranks.length?Number((ranks.reduce((a,b)=>a+b,0)/ranks.length).toFixed(1)):null;
+    result[type][`${method}_mean_time_to_first_relevant_ms`]=times.length?Number((times.reduce((a,b)=>a+b,0)/times.length).toFixed(3)):null;
+  }
 }
 console.log(JSON.stringify(result,null,2));
