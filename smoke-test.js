@@ -7,7 +7,7 @@ const fields = {
   'alternate-terms': { value: 'lane closure, right-of-way work, detour' },
   'concept-request': { textContent: '' },
   'concept-route': { textContent: '' },
-  'concept-tags': { innerHTML: '' },
+  'concept-tags': { innerHTML: '', querySelectorAll: () => [] },
   'concept-candidate': { textContent: '' },
   'concept-candidate-label': { textContent: '' },
   'concept-note': { textContent: '' },
@@ -102,6 +102,13 @@ vm.runInContext("renderConceptPreview(scenarios.find(s=>s.id==='exact-2'))", con
 assert(fields['concept-route'].textContent.includes('CEDAR AVENUE EMAIL'), 'hero preview reflects the selected demo scenario');
 assert(fields['concept-request'].textContent.includes('utility coordination'), 'hero preview reflects selected scenario search terms');
 assert(fields['concept-candidate'].textContent.includes('Cedar Avenue utility coordination email'), 'hero preview candidate follows selected scenario labels');
+const stormwaterScenario = scenarios.find(s => s.id === 'exact-4');
+fields['request-text'].value = stormwaterScenario.request;
+fields.topics.value = stormwaterScenario.topics;
+fields['alternate-terms'].value = '';
+vm.runInContext("renderConceptPreview(scenarios.find(s=>s.id==='exact-4'))", context);
+assert(fields['concept-tags'].innerHTML.includes('rainwater drains'), 'hero preview suggests curated alternates for the selected topic');
+assert(fields['concept-terms-label'].textContent.includes('SUGGESTED TERMS'), 'preview distinguishes suggestions from terms already in the plan');
 fields['request-text'].value = 'Find every email about a custom topic.';
 vm.runInContext("renderConceptPreview(scenarios.find(s=>s.id==='exact-2'))", context);
 assert(fields['concept-candidate'].textContent.includes('Run search'), 'edited custom requests do not show a stale scenario candidate');
