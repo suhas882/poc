@@ -28,3 +28,39 @@ select,input,textarea{border-color:#d4e0dc;border-radius:10px;padding:11px 12px;
 .label-table,.table-wrap{border-radius:12px}.label-table th,.table-wrap th{background:#eaf2ed}.label-table td,.table-wrap td{padding:10px}.compare-row{border:1px solid #e5ece8;border-radius:10px}.compare-header{background:#eaf2ed}.log-preview{border-radius:10px;background:#f2f6f2}.empty{border:1px dashed #c9d8d1;border-radius:12px;margin:18px 0}
 @media(max-width:760px){.topbar{padding-inline:16px}.intro{margin:34px auto 24px;padding:0 18px;display:grid;gap:20px}.intro h1{font-size:43px}.guardrail{max-width:none}.page-content{padding:0 14px}.card,.results-card{padding:20px 17px}.result-top{align-items:flex-start}.score{font-size:9px;white-space:normal;text-align:center}.form-row,.search-actions{align-items:flex-start;flex-wrap:wrap}.page-shell>footer{margin-inline:14px;padding-inline:4px}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important}}
+
+/* Page-specific workspace layouts */
+body[data-page="request"] .page-content{max-width:1320px;grid-template-columns:minmax(260px,.8fr) minmax(0,1.35fr);align-items:start}
+body[data-page="request"] .request-card{grid-column:1;grid-row:1}
+body[data-page="request"] .plan-card{grid-column:2;grid-row:1 / span 2}
+body[data-page="request"] .page-content>section:last-child{grid-column:1;grid-row:2;align-self:start;background:#14363a;color:#eef6e7;border-color:#25494b}
+body[data-page="request"] .page-content>section:last-child .helper{color:#c0d3ca;line-height:1.65}
+body[data-page="request"] .page-content>section:last-child .card-heading{margin-bottom:8px}
+body[data-page="request"] .plan-grid{grid-template-columns:1fr 1fr;gap:6px 16px}
+body[data-page="request"] .wide{grid-column:1/-1}
+body[data-page="search"] .page-content{max-width:1320px;grid-template-columns:minmax(0,1.6fr) minmax(270px,.65fr);align-items:start}
+body[data-page="search"] .results-card{grid-column:1;grid-row:1}
+body[data-page="search"] .route-card{grid-column:2;grid-row:1;position:sticky;top:116px;background:#14363a;color:#f4f7ed;border-color:#25494b}
+body[data-page="search"] .route-card .card-heading h2,body[data-page="search"] .route-card h3{color:#f4f7ed}
+body[data-page="search"] .route-card .helper,body[data-page="search"] .route-card .metric-caveat{color:#bfd0ca}
+body[data-page="search"] .route-controls{grid-template-columns:1fr}
+body[data-page="search"] .route-controls label,body[data-page="search"] .route-controls select,body[data-page="search"] .route-controls button{grid-row:auto}
+body[data-page="search"] .route-card .button{width:100%;margin-top:7px}
+body[data-page="evaluation"] .page-content{max-width:1320px;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}
+body[data-page="evaluation"] .label-card,body[data-page="evaluation"] .log-card{grid-column:1/-1}
+body[data-page="evaluation"] .comparison-card{min-height:100%}
+body[data-page="evaluation"] .accessibility-card{grid-column:1/-1}
+.compact-intro{align-items:center}
+.compact-intro h1{font-size:clamp(40px,4.5vw,58px)}
+.result{position:relative;padding:21px 13px;margin:0 -13px;border-radius:13px;transition:background .16s,transform .16s}
+.result:hover{background:#f8faf6;transform:translateX(2px)}
+.result-rank{background:#133a3d;color:#d7f38b;border:0}
+.route-card .card-heading{align-items:flex-start}
+.route-card .step{background:#c9f36b;color:#14363a}
+.route-card select{background:#fff}
+.route-card .route-panel{margin:0;padding:0;background:transparent;border:0}
+.route-card .feedback-status{color:#d7f38b;font-size:11px;margin-top:10px}
+.route-card .metric-caveat{border-top:1px solid #315255;padding-top:13px;margin-top:14px;line-height:1.6}
+.route-card:after{content:"SYNTHETIC WORKFLOW";display:block;margin-top:25px;padding-top:13px;border-top:1px solid #315255;color:#c9f36b;font-size:9px;font-weight:800;letter-spacing:.15em}
+@media(max-width:900px){body[data-page="request"] .page-content,body[data-page="search"] .page-content,body[data-page="evaluation"] .page-content{grid-template-columns:1fr}body[data-page="request"] .request-card,body[data-page="request"] .plan-card,body[data-page="request"] .page-content>section:last-child,body[data-page="search"] .results-card,body[data-page="search"] .route-card,body[data-page="evaluation"] .label-card,body[data-page="evaluation"] .log-card,body[data-page="evaluation"] .accessibility-card{grid-column:1;grid-row:auto}body[data-page="search"] .route-card{position:static}}
+@media(max-width:650px){body[data-page="request"] .plan-grid{grid-template-columns:1fr}body[data-page="request"] .wide{grid-column:auto}body[data-page="evaluation"] .compare-row{grid-template-columns:minmax(120px,1.2fr) repeat(3,minmax(62px,auto))}}

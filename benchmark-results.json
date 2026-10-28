@@ -12,8 +12,8 @@
         "recall_at_50": 42.9,
         "precision_at_50": 16.7,
         "first_relevant_rank": 3,
-        "time_to_first_relevant_ms": 12.71,
-        "ranking_time_ms": 12.71
+        "time_to_first_relevant_ms": 15.286,
+        "ranking_time_ms": 15.286
       },
       "synonym_expanded": {
         "recall_at_10": 100,
@@ -21,8 +21,8 @@
         "recall_at_50": 100,
         "precision_at_50": 38.9,
         "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 30.172,
-        "ranking_time_ms": 30.172
+        "time_to_first_relevant_ms": 21.423,
+        "ranking_time_ms": 21.423
       }
     },
     {
@@ -34,8 +34,8 @@
         "recall_at_50": 100,
         "precision_at_50": 27.8,
         "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 10.993,
-        "ranking_time_ms": 10.993
+        "time_to_first_relevant_ms": 5.089,
+        "ranking_time_ms": 5.089
       },
       "synonym_expanded": {
         "recall_at_10": 100,
@@ -43,8 +43,8 @@
         "recall_at_50": 100,
         "precision_at_50": 27.8,
         "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 10.275,
-        "ranking_time_ms": 10.275
+        "time_to_first_relevant_ms": 9.273,
+        "ranking_time_ms": 9.273
       }
     },
     {
@@ -56,8 +56,8 @@
         "recall_at_50": 100,
         "precision_at_50": 11.1,
         "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 2.735,
-        "ranking_time_ms": 2.735
+        "time_to_first_relevant_ms": 4.105,
+        "ranking_time_ms": 4.105
       },
       "synonym_expanded": {
         "recall_at_10": 100,
@@ -65,8 +65,8 @@
         "recall_at_50": 100,
         "precision_at_50": 11.1,
         "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 9.574,
-        "ranking_time_ms": 9.574
+        "time_to_first_relevant_ms": 12.167,
+        "ranking_time_ms": 12.167
       }
     },
     {
@@ -78,8 +78,8 @@
         "recall_at_50": 100,
         "precision_at_50": 16.7,
         "first_relevant_rank": 2,
-        "time_to_first_relevant_ms": 4.29,
-        "ranking_time_ms": 4.29
+        "time_to_first_relevant_ms": 5.697,
+        "ranking_time_ms": 5.697
       },
       "synonym_expanded": {
         "recall_at_10": 100,
@@ -87,8 +87,8 @@
         "recall_at_50": 100,
         "precision_at_50": 16.7,
         "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 5.091,
-        "ranking_time_ms": 5.091
+        "time_to_first_relevant_ms": 5.764,
+        "ranking_time_ms": 5.764
       }
     },
     {
@@ -100,8 +100,8 @@
         "recall_at_50": 100,
         "precision_at_50": 5.6,
         "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 2.183,
-        "ranking_time_ms": 2.183
+        "time_to_first_relevant_ms": 2.367,
+        "ranking_time_ms": 2.367
       },
       "synonym_expanded": {
         "recall_at_10": 100,
@@ -109,8 +109,8 @@
         "recall_at_50": 100,
         "precision_at_50": 5.6,
         "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 3.939,
-        "ranking_time_ms": 3.939
+        "time_to_first_relevant_ms": 3.7,
+        "ranking_time_ms": 3.7
       }
     },
     {
@@ -122,8 +122,8 @@
         "recall_at_50": 100,
         "precision_at_50": 5.6,
         "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 3.646,
-        "ranking_time_ms": 3.646
+        "time_to_first_relevant_ms": 3.865,
+        "ranking_time_ms": 3.865
       },
       "synonym_expanded": {
         "recall_at_10": 100,
@@ -131,8 +131,8 @@
         "recall_at_50": 100,
         "precision_at_50": 5.6,
         "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 4.965,
-        "ranking_time_ms": 4.965
+        "time_to_first_relevant_ms": 5.344,
+        "ranking_time_ms": 5.344
       }
     },
     {
@@ -144,8 +144,8 @@
         "recall_at_50": 100,
         "precision_at_50": 5.6,
         "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 3.182,
-        "ranking_time_ms": 3.182
+        "time_to_first_relevant_ms": 3.306,
+        "ranking_time_ms": 3.306
       },
       "synonym_expanded": {
         "recall_at_10": 100,
@@ -153,8 +153,8 @@
         "recall_at_50": 100,
         "precision_at_50": 5.6,
         "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 4.488,
-        "ranking_time_ms": 4.488
+        "time_to_first_relevant_ms": 4.715,
+        "ranking_time_ms": 4.715
       }
     },
     {
@@ -166,8 +166,8 @@
         "recall_at_50": 100,
         "precision_at_50": 5.6,
         "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 4.31,
-        "ranking_time_ms": 4.31
+        "time_to_first_relevant_ms": 3.605,
+        "ranking_time_ms": 3.605
       },
       "synonym_expanded": {
         "recall_at_10": 100,
@@ -175,8 +175,8 @@
         "recall_at_50": 100,
         "precision_at_50": 5.6,
         "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 3.969,
-        "ranking_time_ms": 3.969
+        "time_to_first_relevant_ms": 3.55,
+        "ranking_time_ms": 3.55
       }
     },
     {
@@ -188,8 +188,8 @@
         "recall_at_50": 100,
         "precision_at_50": 5.6,
         "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 3.54,
-        "ranking_time_ms": 3.54
+        "time_to_first_relevant_ms": 4.261,
+        "ranking_time_ms": 4.261
       },
       "synonym_expanded": {
         "recall_at_10": 100,
@@ -197,8 +197,8 @@
         "recall_at_50": 100,
         "precision_at_50": 5.6,
         "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 3.95,
-        "ranking_time_ms": 3.95
+        "time_to_first_relevant_ms": 4.101,
+        "ranking_time_ms": 4.101
       }
     },
     {
@@ -210,8 +210,8 @@
         "recall_at_50": 100,
         "precision_at_50": 5.6,
         "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 1.612,
-        "ranking_time_ms": 1.612
+        "time_to_first_relevant_ms": 1.6,
+        "ranking_time_ms": 1.6
       },
       "synonym_expanded": {
         "recall_at_10": 100,
@@ -219,8 +219,8 @@
         "recall_at_50": 100,
         "precision_at_50": 5.6,
         "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 1.132,
-        "ranking_time_ms": 1.132
+        "time_to_first_relevant_ms": 1.479,
+        "ranking_time_ms": 1.479
       }
     },
     {
@@ -232,8 +232,8 @@
         "recall_at_50": 100,
         "precision_at_50": 5.6,
         "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 2.855,
-        "ranking_time_ms": 2.855
+        "time_to_first_relevant_ms": 3.626,
+        "ranking_time_ms": 3.626
       },
       "synonym_expanded": {
         "recall_at_10": 100,
@@ -241,8 +241,8 @@
         "recall_at_50": 100,
         "precision_at_50": 5.6,
         "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 4.502,
-        "ranking_time_ms": 4.502
+        "time_to_first_relevant_ms": 5.199,
+        "ranking_time_ms": 5.199
       }
     },
     {
@@ -254,8 +254,8 @@
         "recall_at_50": 100,
         "precision_at_50": 5.6,
         "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 2.278,
-        "ranking_time_ms": 2.278
+        "time_to_first_relevant_ms": 2.628,
+        "ranking_time_ms": 2.628
       },
       "synonym_expanded": {
         "recall_at_10": 100,
@@ -263,8 +263,8 @@
         "recall_at_50": 100,
         "precision_at_50": 5.6,
         "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 2.234,
-        "ranking_time_ms": 2.234
+        "time_to_first_relevant_ms": 2.515,
+        "ranking_time_ms": 2.515
       }
     },
     {
@@ -276,8 +276,8 @@
         "recall_at_50": 57.1,
         "precision_at_50": 22.2,
         "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 1.288,
-        "ranking_time_ms": 1.288
+        "time_to_first_relevant_ms": 1.897,
+        "ranking_time_ms": 1.897
       },
       "synonym_expanded": {
         "recall_at_10": 57.1,
@@ -285,8 +285,8 @@
         "recall_at_50": 57.1,
         "precision_at_50": 22.2,
         "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 2.079,
-        "ranking_time_ms": 2.079
+        "time_to_first_relevant_ms": 4.372,
+        "ranking_time_ms": 4.372
       }
     },
     {
@@ -298,8 +298,8 @@
         "recall_at_50": 80,
         "precision_at_50": 22.2,
         "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 1.858,
-        "ranking_time_ms": 1.858
+        "time_to_first_relevant_ms": 2.108,
+        "ranking_time_ms": 2.108
       },
       "synonym_expanded": {
         "recall_at_10": 80,
@@ -307,8 +307,8 @@
         "recall_at_50": 80,
         "precision_at_50": 22.2,
         "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 1.455,
-        "ranking_time_ms": 1.455
+        "time_to_first_relevant_ms": 2.128,
+        "ranking_time_ms": 2.128
       }
     },
     {
@@ -320,8 +320,8 @@
         "recall_at_50": 75,
         "precision_at_50": 16.7,
         "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 1.539,
-        "ranking_time_ms": 1.539
+        "time_to_first_relevant_ms": 1.473,
+        "ranking_time_ms": 1.473
       },
       "synonym_expanded": {
         "recall_at_10": 100,
@@ -329,8 +329,8 @@
         "recall_at_50": 100,
         "precision_at_50": 22.2,
         "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 2.101,
-        "ranking_time_ms": 2.101
+        "time_to_first_relevant_ms": 3.945,
+        "ranking_time_ms": 3.945
       }
     },
     {
@@ -342,8 +342,8 @@
         "recall_at_50": 100,
         "precision_at_50": 44.4,
         "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 1.131,
-        "ranking_time_ms": 1.131
+        "time_to_first_relevant_ms": 2.956,
+        "ranking_time_ms": 2.956
       },
       "synonym_expanded": {
         "recall_at_10": 100,
@@ -351,8 +351,8 @@
         "recall_at_50": 100,
         "precision_at_50": 44.4,
         "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 1.287,
-        "ranking_time_ms": 1.287
+        "time_to_first_relevant_ms": 2.997,
+        "ranking_time_ms": 2.997
       }
     },
     {
@@ -364,8 +364,8 @@
         "recall_at_50": 100,
         "precision_at_50": 33.3,
         "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 2.469,
-        "ranking_time_ms": 2.469
+        "time_to_first_relevant_ms": 2.416,
+        "ranking_time_ms": 2.416
       },
       "synonym_expanded": {
         "recall_at_10": 100,
@@ -373,8 +373,8 @@
         "recall_at_50": 100,
         "precision_at_50": 33.3,
         "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 1.211,
-        "ranking_time_ms": 1.211
+        "time_to_first_relevant_ms": 1.759,
+        "ranking_time_ms": 1.759
       }
     },
     {
@@ -386,8 +386,8 @@
         "recall_at_50": 66.7,
         "precision_at_50": 11.1,
         "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 0.845,
-        "ranking_time_ms": 0.845
+        "time_to_first_relevant_ms": 1.165,
+        "ranking_time_ms": 1.165
       },
       "synonym_expanded": {
         "recall_at_10": 66.7,
@@ -395,8 +395,8 @@
         "recall_at_50": 66.7,
         "precision_at_50": 11.1,
         "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 0.592,
-        "ranking_time_ms": 0.592
+        "time_to_first_relevant_ms": 1.209,
+        "ranking_time_ms": 1.209
       }
     }
   ],
@@ -411,9 +411,9 @@
     "synonym_expanded_recall_at_50": 100,
     "synonym_expanded_precision_at_50": 5.6,
     "keyword_mean_first_relevant_rank": 1,
-    "keyword_mean_time_to_first_relevant_ms": 2.963,
+    "keyword_mean_time_to_first_relevant_ms": 3.171,
     "synonym_expanded_mean_first_relevant_rank": 1,
-    "synonym_expanded_mean_time_to_first_relevant_ms": 3.379
+    "synonym_expanded_mean_time_to_first_relevant_ms": 3.593
   },
   "Different wording": {
     "count": 6,
@@ -426,9 +426,9 @@
     "synonym_expanded_recall_at_50": 100,
     "synonym_expanded_precision_at_50": 17.6,
     "keyword_mean_first_relevant_rank": 1.5,
-    "keyword_mean_time_to_first_relevant_ms": 6.093,
+    "keyword_mean_time_to_first_relevant_ms": 6.068,
     "synonym_expanded_mean_first_relevant_rank": 1,
-    "synonym_expanded_mean_time_to_first_relevant_ms": 10.669
+    "synonym_expanded_mean_time_to_first_relevant_ms": 9.612
   },
   "Vague request": {
     "count": 6,
@@ -441,8 +441,8 @@
     "synonym_expanded_recall_at_50": 84,
     "synonym_expanded_precision_at_50": 25.9,
     "keyword_mean_first_relevant_rank": 1,
-    "keyword_mean_time_to_first_relevant_ms": 1.522,
+    "keyword_mean_time_to_first_relevant_ms": 2.002,
     "synonym_expanded_mean_first_relevant_rank": 1,
-    "synonym_expanded_mean_time_to_first_relevant_ms": 1.454
+    "synonym_expanded_mean_time_to_first_relevant_ms": 2.735
   }
 }
