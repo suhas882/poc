@@ -8,17 +8,24 @@ The search-plan draft uses local rules. Retrieval uses phrase-aware keyword scor
 
 ## Run locally
 
-Run the server from this folder:
+The browser application is authored in TypeScript (`app.ts`) and compiled to the checked-in `app.js` browser asset. Build it with:
+
+```powershell
+npm ci
+npm run build
+```
+
+Then run the server from this folder:
 
 ```powershell
 node server.js
 ```
 
-No packages are required. The server prints a local URL and same-network URL. The demo has three pages: Request & Plan (`/`), Search Results (`/search.html`), and Evaluation (`/evaluation.html`). The request and plan persist in browser storage between pages. The server has no login. It serves a synthetic-data demo and does not collect user feedback. Stop the server with Ctrl+C.
+The server prints a local URL and same-network URL. The demo has three pages: Request & Plan (`/`), Search Results (`/search.html`), and Evaluation (`/evaluation.html`). The request and plan persist in browser storage between pages. The server has no login. It serves a synthetic-data demo and does not collect user feedback. Stop the server with Ctrl+C.
 
 ## Deploy on Render
 
-The repository includes `render.yaml`. In Render, create a Blueprint from `https://github.com/suhas882/poc` and select the `master` branch, or create a Web Service from that repository with build command `node --check server.js && node --check app.js`, start command `node server.js`, and health check path `/api/health`. The server binds to Render's `PORT` and `0.0.0.0`.
+The repository includes `render.yaml`. In Render, create a Blueprint from `https://github.com/suhas882/poc` and select the `master` branch, or create a Web Service from that repository with build command `npm ci && npm run build`, start command `node server.js`, and health check path `/api/health`. The server binds to Render's `PORT` and `0.0.0.0`.
 
 The app is public when deployed and has no authentication. Keep the corpus synthetic and do not enter city or requester data.
 
@@ -44,7 +51,7 @@ The app is public when deployed and has no authentication. Keep the corpus synth
 
 ## Core checks
 
-Run `node smoke-test.js` to check scenario count and coverage, corpus load, both search modes, safe passage highlighting, labeled retrieval across all 18 scenarios, clarification drafts, top-10/top-50 calculations, metadata filters, and the synthetic different-wording/exact-match benchmark bars. Run `node --check app.js` and `node --check server.js` for JavaScript syntax.
+Run `npm run build` to compile TypeScript and check the generated browser script and server syntax. Run `node smoke-test.js` to check scenario count and coverage, corpus load, both search modes, safe passage highlighting, labeled retrieval across all 18 scenarios, clarification drafts, top-10/top-50 calculations, metadata filters, and the synthetic different-wording/exact-match benchmark bars.
 
 ## Boundaries and next steps
 

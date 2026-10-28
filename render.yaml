@@ -3,6 +3,6 @@ services:
     name: public-records-ai-search-poc
     runtime: node
     plan: free
-    buildCommand: node --check server.js && node --check app.js
+    buildCommand: npm ci && npm run build
     startCommand: node server.js
     healthCheckPath: /api/health
