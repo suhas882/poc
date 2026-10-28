@@ -5,21 +5,17 @@ const os = require('node:os');
 
 const root = __dirname;
 const port = Number(process.env.PORT || process.env.POC_PORT || 8765);
-const feedbackPath = path.join(root, 'feedback.jsonl');
 const allowedFiles = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
   ['/index.html', ['index.html', 'text/html; charset=utf-8']],
   ['/search.html', ['search.html', 'text/html; charset=utf-8']],
   ['/evaluation.html', ['evaluation.html', 'text/html; charset=utf-8']],
-  ['/workflow.html', ['workflow.html', 'text/html; charset=utf-8']],
   ['/POC-VIDEO.html', ['POC-VIDEO.html', 'text/html; charset=utf-8']],
   ['/PITCH-VIDEO-SCRIPT.md', ['PITCH-VIDEO-SCRIPT.md', 'text/markdown; charset=utf-8']],
   ['/video-output/bellevue-public-records-poc-walkthrough.mp4', ['video-output/bellevue-public-records-poc-walkthrough.mp4', 'video/mp4']],
   ['/styles.css', ['styles.css', 'text/css; charset=utf-8']],
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']]
 ]);
-const categories = new Set(['Overall impression', 'Search results', 'Search plan', 'Accessibility', 'Other']);
-
 function sendJson(response, status, payload) {
   response.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
@@ -29,53 +25,10 @@ function sendJson(response, status, payload) {
   response.end(JSON.stringify(payload));
 }
 
-function readJson(request) {
-  return new Promise((resolve, reject) => {
-    let body = '';
-    request.setEncoding('utf8');
-    request.on('data', chunk => {
-      body += chunk;
-      if (Buffer.byteLength(body, 'utf8') > 4096) {
-        reject(Object.assign(new Error('Feedback is too large.'), { status: 413 }));
-        request.destroy();
-      }
-    });
-    request.on('end', () => {
-      try { resolve(JSON.parse(body)); }
-      catch { reject(Object.assign(new Error('Invalid JSON.'), { status: 400 })); }
-    });
-    request.on('error', reject);
-  });
-}
-
-const server = http.createServer(async (request, response) => {
+const server = http.createServer((request, response) => {
   const url = new URL(request.url, 'http://localhost');
   if (request.method === 'GET' && url.pathname === '/api/health') {
-    return sendJson(response, 200, { ok: true, feedbackStorage: 'local project folder' });
-  }
-  if (request.method === 'POST' && url.pathname === '/api/feedback') {
-    if (!request.headers['content-type']?.toLowerCase().startsWith('application/json')) {
-      return sendJson(response, 415, { error: 'Send feedback as JSON.' });
-    }
-    try {
-      const input = await readJson(request);
-      const message = typeof input.message === 'string' ? input.message.trim() : '';
-      const category = typeof input.category === 'string' ? input.category : '';
-      if (!message || message.length > 3000) return sendJson(response, 400, { error: 'Comments must contain 1 to 3000 characters.' });
-      if (!categories.has(category)) return sendJson(response, 400, { error: 'Choose a listed feedback area.' });
-      const entry = {
-        submittedAt: new Date().toISOString(),
-        name: typeof input.name === 'string' ? input.name.trim().slice(0, 80) : '',
-        category,
-        scenario: typeof input.scenario === 'string' ? input.scenario.slice(0, 80) : '',
-        message
-      };
-      fs.appendFileSync(feedbackPath, `${JSON.stringify(entry)}\n`, { encoding: 'utf8', flag: 'a' });
-      return sendJson(response, 201, { ok: true });
-    } catch (error) {
-      if (response.headersSent || request.destroyed) return;
-      return sendJson(response, error.status || 500, { error: error.status ? error.message : 'Feedback could not be saved locally.' });
-    }
+    return sendJson(response, 200, { ok: true, corpus: 'synthetic' });
   }
   if (request.method !== 'GET') return sendJson(response, 405, { error: 'Method not allowed.' });
   const file = allowedFiles.get(url.pathname);
@@ -100,7 +53,6 @@ server.listen(port, '0.0.0.0', () => {
       }
     }
   }
-  console.log(`Feedback is appended locally to ${feedbackPath}`);
 });
 
 process.on('SIGINT', () => server.close(() => process.exit(0)));

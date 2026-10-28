@@ -14,13 +14,13 @@ Run the server from this folder:
 node server.js
 ```
 
-No packages are required. The server prints a local URL and same-network URL. The demo is split into four pages: Request & Plan (`/`), Search Results (`/search.html`), Evaluation (`/evaluation.html`), and Pilot & Feedback (`/workflow.html`). The request and plan persist in browser storage between pages. The server has no login, so anyone who can reach its URL can submit comments. Feedback is appended to `feedback.jsonl` in this folder. Stop the server with Ctrl+C.
+No packages are required. The server prints a local URL and same-network URL. The demo has three pages: Request & Plan (`/`), Search Results (`/search.html`), and Evaluation (`/evaluation.html`). The request and plan persist in browser storage between pages. The server has no login. It serves a synthetic-data demo and does not collect user feedback. Stop the server with Ctrl+C.
 
 ## Deploy on Render
 
 The repository includes `render.yaml`. In Render, create a Blueprint from `https://github.com/suhas882/poc` and select the `master` branch, or create a Web Service from that repository with build command `node --check server.js && node --check app.js`, start command `node server.js`, and health check path `/api/health`. The server binds to Render's `PORT` and `0.0.0.0`.
 
-Feedback currently writes to `feedback.jsonl` on the server filesystem. Render's default filesystem is ephemeral, so use a persistent disk or a database if feedback must survive service restarts and redeploys. The demo has no authentication; anyone who can access its public URL can submit feedback. Keep the corpus synthetic and do not enter city or requester data.
+The app is public when deployed and has no authentication. Keep the corpus synthetic and do not enter city or requester data.
 
 ## Included flows
 
@@ -36,11 +36,9 @@ Feedback currently writes to `feedback.jsonl` on the server filesystem. Render's
 - Editable clarification-question drafts and explicit search-plan confirmation before search.
 - Full 18-scenario evaluation and JSON export. This runs the local lexical prototype, not embeddings or an LLM.
 - Per-scenario and request-type comparisons include recall and precision at 10 and 50, first relevant rank, and local time-to-first-relevant result. The ranking-time measure is not staff time.
-- Tier 0/1/2 and proposed milestone/KPI simulator. Later tiers do not grant access to any city data.
 - Basic page-structure accessibility self-check. It is not SureAccess.
-- Feedback form with an optional name; submissions are validated and saved locally by the Node server.
 - Responsive layout, keyboard focus styles, labels, and WCAG 2.1 AA-aligned intent. This is not a compliance claim or completed accessibility audit.
-- Four separate navigable pages for request planning, ranked results, evaluation/label review, and pilot planning/feedback.
+- Three separate navigable pages for request planning, ranked results, and evaluation/label review. Search-log export and accessibility self-check are on Evaluation.
 - A two-minute, captioned browser video builder and a short MP4 walkthrough, both using synthetic examples only.
 
 ## Core checks
@@ -53,12 +51,12 @@ Run `node smoke-test.js` to check scenario count and coverage, corpus load, both
 - Do not add a model call until Bellevue's approved model and hosting are known and the AI review and data-sharing gates are met.
 - No repository connector exists. The app searches only the bundled synthetic records and applies no source permissions.
 - No authentication or multi-user attribution exists. Logs are a local draft, not an official diligent-search record.
-- The preview and feedback endpoint are unauthenticated on the local network. The app uses synthetic records only. Feedback is private to this machine's project folder and is not visible in the app.
+- The preview is unauthenticated. The app uses synthetic records only and has no feedback-collection endpoint.
 - No OCR, vector embeddings, GovQA integration, or real repository connectors exist. The related-record tag is illustrative and does not perform deduplication/thread grouping.
 - Coordinator routing is a UI simulation only. It does not notify or assign a real person. Clarification questions are editable drafts and are never sent to requesters.
 - The labels are provisional and not independently adjudicated. The in-app worksheet supports Reviewer 1, Reviewer 2, and Adjudicator views, but it cannot verify identities or enforce blind review. Metrics do not establish expected pilot performance.
 - No responsiveness, privilege, exemption, redaction, disclosure, or requester-response decision is automated.
-- The tier simulator and milestone/KPI panel are planning aids; no city approvals, sandbox, live shadow access, or real pilot activity is represented.
+- Pilot planning, feedback collection, and city access tiers are not part of the current app interface.
 - Planned work still depends on partner decisions about corpus terms, approved hosting/model, repositories, closed-request ground truth, baselines, and permissions.
 
 ## Implementation progress
@@ -68,6 +66,7 @@ Run `node smoke-test.js` to check scenario count and coverage, corpus load, both
 - 2026-10-26: Expanded from three examples to 18 invented scenarios, added plan fields, clarification drafts, passage highlights, review notes, and top-10/top-50 comparison.
 - 2026-10-26: Separated the plain keyword baseline from synonym expansion and tuned a different-wording scenario. The all-scenario benchmark is in `benchmark-results.json`; its precision denominator is 10 for top 10 and 18 for top 50 because the corpus has 18 records. On different-wording cases, synonym-expanded retrieval has 100% recall at 10 and 50 versus 87.1% and 90.5% for plain keyword, and pooled precision is also higher at 10 (31.7% versus 23.3%) and 50 (17.6% versus 13.9%). Exact-case recall ties at 100%. These are synthetic demo results, not validated performance claims.
 - 2026-10-27: Split the previous single page into Request & Plan, Search Results, Evaluation, and Pilot & Feedback pages. Added shared local plan/request state and server routes for each page. Verified JavaScript syntax, core search smoke checks, and reviewer-label workflow checks. Updated preview started on port 8766 because port 8765 was already occupied by the prior server process.
+- 2026-10-28: Removed Pilot & Feedback from the app navigation and removed its page and feedback endpoint. Moved search-log export and the basic accessibility self-check to Evaluation. The app now has three navigable pages.
 - 2026-10-26: Added a full 18-scenario benchmark command and JSON snapshot, a synthetic-record provenance manifest, a separate reviewer/adjudicator label worksheet with CSV export, and a demo plan documenting remaining human review gates. SureAccess scan and Vikram Kamble review remain outstanding.
 - 2026-10-26: Added `server.js` with same-network preview and a local JSONL feedback store. Added a feedback form to the POC.
 - 2026-10-26: Started the LAN preview at `http://192.168.0.11:8765/`. Submitted a test comment through the browser, confirmed local save, then removed the test-only feedback file. The feedback file will be created when the friend sends the first real comment.

@@ -31,11 +31,11 @@ Run `node benchmark.js` to compare plain keyword ranking with synonym-expanded k
 
 ## Interface and review
 
-The app provides request editing, editable plan fields and clarification questions, plan confirmation, repository filtering, ranked results with reasons and highlighted passages, staff review marks and notes, a simulated coordinator route, a session log, and JSON export. A full-set evaluation can be run and exported. The local rules and synonym expansion are not an embedding model or LLM. No source connectors, authentication, or repository permissions are implemented. The tier selector, proposed milestones, KPI targets, guardrails, and accessibility self-check are demo/planning aids only; they do not represent City approval or real pilot activity.
+The app provides request editing, editable plan fields and clarification questions, plan confirmation, repository filtering, ranked results with reasons and highlighted passages, staff review marks and notes, a simulated coordinator route, a session log, and JSON export. A full-set evaluation can be run and exported. The local rules and synonym expansion are not an embedding model or LLM. No source connectors, authentication, or repository permissions are implemented. The pilot-planning and feedback page was removed on October 28; the current app has three pages. The accessibility self-check remains a basic local aid, not an audit.
 
 ## Accessibility
 
-The interface uses semantic headings, explicit form labels, keyboard focus indicators, responsive layout, and live feedback status. This is an implementation checklist, not a SureAccess scan or conformance finding. A SureAccess scan and Vikram Kamble review are validation tasks; record findings and fixes here after they occur. Describe the interface as WCAG 2.1 AA-aligned. Do not claim compliant or certified.
+The interface uses semantic headings, explicit form labels, keyboard focus indicators, responsive layout, and status messages. This is an implementation checklist, not a SureAccess scan or conformance finding. A SureAccess scan and Vikram Kamble review are validation tasks; record findings and fixes here after they occur. Describe the interface as WCAG 2.1 AA-aligned. Do not claim compliant or certified.
 
 ## Remaining evidence gates
 
