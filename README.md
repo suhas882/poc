@@ -39,6 +39,7 @@ The app is public when deployed and has no authentication. Keep the corpus synth
 - Basic page-structure accessibility self-check. It is not SureAccess.
 - Responsive layout, keyboard focus styles, labels, and WCAG 2.1 AA-aligned intent. This is not a compliance claim or completed accessibility audit.
 - Three separate navigable pages for request planning, ranked results, and evaluation/label review. Search-log export and accessibility self-check are on Evaluation.
+- Three selectable visual themes: Archive, Signal, and Field Notes. The design switcher is available in the top bar on every page, updates immediately, and remembers the choice in browser storage.
 - A two-minute, captioned browser video builder and a short MP4 walkthrough, both using synthetic examples only.
 
 ## Core checks
@@ -68,6 +69,7 @@ Run `node smoke-test.js` to check scenario count and coverage, corpus load, both
 - 2026-10-27: Split the previous single page into Request & Plan, Search Results, Evaluation, and Pilot & Feedback pages. Added shared local plan/request state and server routes for each page. Verified JavaScript syntax, core search smoke checks, and reviewer-label workflow checks. Updated preview started on port 8766 because port 8765 was already occupied by the prior server process.
 - 2026-10-28: Removed Pilot & Feedback from the app navigation and removed its page and feedback endpoint. Moved search-log export and the basic accessibility self-check to Evaluation. The app now has three navigable pages.
 - 2026-10-28: Refreshed the interface with a dark civic-search header, lime accent, responsive editorial layout, clearer candidate ranks, match-strength bands instead of misleading percentages, and more explicit evidence explanations. Improved lexical retrieval with phrase recognition, plural normalization, rare-term weighting, field-aware scoring, and conservative phrase-triggered concept expansion. Regenerated the synthetic benchmark; results remain illustrative and do not validate city-record performance.
+- 2026-10-28: Added three persistent visual design choices across Request & Plan, Search Results, and Evaluation: Archive, Signal, and Field Notes. Theme choice changes the color system, typography, component geometry, and decorative treatment without changing search behavior.
 - 2026-10-26: Added a full 18-scenario benchmark command and JSON snapshot, a synthetic-record provenance manifest, a separate reviewer/adjudicator label worksheet with CSV export, and a demo plan documenting remaining human review gates. SureAccess scan and Vikram Kamble review remain outstanding.
 - 2026-10-26: Added `server.js` with same-network preview and a local JSONL feedback store. Added a feedback form to the POC.
 - 2026-10-26: Started the LAN preview at `http://192.168.0.11:8765/`. Submitted a test comment through the browser, confirmed local save, then removed the test-only feedback file. The feedback file will be created when the friend sends the first real comment.
