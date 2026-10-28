@@ -2,8 +2,15 @@ const fs = require('fs');
 const vm = require('vm');
 const assert = require('assert');
 const fields = {
+  'request-text': { value: '' },
   'topics': { value: 'road closure, Cedar Avenue, utility work' },
   'alternate-terms': { value: 'lane closure, right-of-way work, detour' },
+  'concept-request': { textContent: '' },
+  'concept-route': { textContent: '' },
+  'concept-tags': { innerHTML: '' },
+  'concept-candidate': { textContent: '' },
+  'concept-candidate-label': { textContent: '' },
+  'concept-note': { textContent: '' },
   'people-orgs': { value: '' },
   'exclusions': { value: '' },
   'clarification-questions': { innerHTML: '' },
@@ -87,4 +94,15 @@ const batch = JSON.parse(vm.runInContext('JSON.stringify(fullBenchmarkResult)', 
 assert.equal(batch.scenario_count, 18, 'in-app full evaluation covers all scenarios');
 assert.equal(batch.groups['Exact keyword'].hybrid_recall_at10, 100, 'batch evaluation preserves exact-match recall');
 assert(batch.groups['Different wording'].hybrid_recall_at10 > batch.groups['Different wording'].keyword_recall_at10, 'batch evaluation verifies different-wording recall lift');
-console.log('POC core checks passed: 18 scenarios, synthetic corpus, both search modes, highlighting, clarification draft, top-10/top-50 metrics, and all filters.');
+const previewScenario = scenarios.find(s => s.id === 'exact-2');
+fields['request-text'].value = previewScenario.request;
+fields.topics.value = previewScenario.topics;
+fields['alternate-terms'].value = '';
+vm.runInContext("renderConceptPreview(scenarios.find(s=>s.id==='exact-2'))", context);
+assert(fields['concept-route'].textContent.includes('CEDAR AVENUE EMAIL'), 'hero preview reflects the selected demo scenario');
+assert(fields['concept-request'].textContent.includes('utility coordination'), 'hero preview reflects selected scenario search terms');
+assert(fields['concept-candidate'].textContent.includes('Cedar Avenue utility coordination email'), 'hero preview candidate follows selected scenario labels');
+fields['request-text'].value = 'Find every email about a custom topic.';
+vm.runInContext("renderConceptPreview(scenarios.find(s=>s.id==='exact-2'))", context);
+assert(fields['concept-candidate'].textContent.includes('Run search'), 'edited custom requests do not show a stale scenario candidate');
+console.log('POC core checks passed: 18 scenarios, synthetic corpus, search modes, scenario-aware preview, highlighting, clarification drafts, top-10/top-50 metrics, and filters.');
