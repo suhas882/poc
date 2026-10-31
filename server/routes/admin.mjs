@@ -7,6 +7,8 @@ import { nowIso, parseJson } from '../db.mjs';
 import { hashPassword, passwordProblem } from '../security.mjs';
 import { applyRetention } from '../retention.mjs';
 import { CONSENT_VERSION, getConsent } from '../consent.mjs';
+import { activePack, getSetting, listPacks, setSetting, switches } from '../packs.mjs';
+import { dueDate, todayIn } from '../deadline.mjs';
 
 const SETTINGS = { defaultMode: { type: 'string', values: ['demo', 'real'] }, summariesEnabled: { type: 'bool' }, resultsPerPage: { type: 'int', min: 10, max: 100 } };
 const DEFAULTS = { defaultMode: 'demo', summariesEnabled: true, resultsPerPage: 20 };
@@ -66,7 +68,7 @@ export function registerAdminRoutes(router, s) {
     if (f('to')) { where.push('a.created_at <= ?'); p.push(`${f('to')}T23:59:59.999Z`); }
     return { sql: `FROM audit_events a LEFT JOIN users u ON u.id = a.user_id WHERE ${where.join(' AND ')}`, params: p };
   }
-  const auditView = (r) => ({ id: r.id, at: r.created_at, action: r.action, label: AUDIT_ACTIONS[r.action] ?? r.action, outcome: r.outcome, user: r.user_id ? { id: r.user_id, name: r.user_name } : null, targetType: r.target_type, targetId: r.target_id, ipHash: r.ip_hash, details: parseJson(r.details, {}) });
+  const auditView = (r) => ({ id: r.id, at: r.created_at, action: r.action, label: AUDIT_ACTIONS[r.action] ?? r.action, outcome: r.outcome, user: r.user_id ? { id: r.user_id, name: r.user_name } : null, targetType: r.target_type, targetId: r.target_id, ipHash: r.ip_hash, details: parseJson(r.details, {}), before: parseJson(r.before_value, null), after: parseJson(r.after_value, null), fingerprint: r.hash ? r.hash.slice(0, 12) : null, hash: r.hash, prevHash: r.prev_hash });
 
   router.on('GET', '/api/audit', ({ res, user, url }) => {
     requirePermission(user, 'audit.read');
@@ -84,7 +86,12 @@ export function registerAdminRoutes(router, s) {
     audit.write({ tenantId: user.tenantId, userId: user.id, action: 'export.created', targetType: 'audit_log', ipHash, details: { rows: rows.length } });
     const esc = (v) => { const t = String(v ?? ''); return `"${(/^[=+\-@]/.test(t) ? "'" + t : t).replace(/"/g, '""')}"`; };
     res.writeHead(200, { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="audit-log.csv"', 'Cache-Control': 'no-store', ...SECURITY_HEADERS });
-    res.end(['time,action,outcome,user,target_type,target_id,details', ...rows.map(r => [r.at, r.label, r.outcome, r.user?.name ?? '', r.targetType ?? '', r.targetId ?? '', JSON.stringify(r.details)].map(esc).join(','))].join('\r\n'));
+    res.end('\ufeff' + ['Time,What happened,Outcome,Who,Item type,Item,Before,After,Details,Hash,Previous hash', ...rows.map(r => [r.at, r.label, r.outcome, r.user?.name ?? '', r.targetType ?? '', r.targetId ?? '', r.before == null ? '' : JSON.stringify(r.before), r.after == null ? '' : JSON.stringify(r.after), JSON.stringify(r.details), r.hash ?? '', r.prevHash ?? ''].map(esc).join(','))].join('\r\n'));
+  });
+
+  router.on('GET', '/api/audit/verify', ({ res, user }) => {
+    requirePermission(user, 'audit.read');
+    ok(res, { ...audit.verify(user.tenantId), wording: 'Tamper-evident: each entry is hashed together with the one before it. This shows changes; it does not prevent them.', checkedAt: nowIso() });
   });
 
   /* ---- search permission (consent) ---- */
@@ -109,14 +116,19 @@ export function registerAdminRoutes(router, s) {
     db.run(`INSERT INTO user_consents (user_id, tenant_id, scope, source_ids, version, granted_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(user_id) DO UPDATE SET scope = excluded.scope, source_ids = excluded.source_ids, version = excluded.version, updated_at = excluded.updated_at`,
     user.id, user.tenantId, body.scope, JSON.stringify(sourceIds), CONSENT_VERSION, now, now);
-    audit.write({ tenantId: user.tenantId, userId: user.id, action: before ? 'consent.changed' : 'consent.granted', targetType: 'user', targetId: user.id, ipHash, details: { scope: body.scope, sources: sourceIds.length, version: CONSENT_VERSION } });
+    const names = (ids) => ids.map(id => db.get('SELECT name FROM sources WHERE id = ?', id)?.name ?? id);
+    audit.write({ tenantId: user.tenantId, userId: user.id, action: before ? 'consent.changed' : 'consent.granted', targetType: 'user', targetId: user.id, ipHash, details: { version: CONSENT_VERSION },
+      before: before ? { mode: before.scope === 'all' ? 'Everything I can access' : 'Only the sources I choose', sources: names(before.sourceIds) } : null,
+      after: { mode: body.scope === 'all' ? 'Everything I can access' : 'Only the sources I choose', sources: names(sourceIds) } });
     ok(res, getConsent(db, user.id));
   });
 
   router.on('DELETE', '/api/consent', ({ res, user, ipHash }) => {
     requirePermission(user, 'search.run');
+    const before = getConsent(db, user.id);
     db.run('DELETE FROM user_consents WHERE user_id = ?', user.id);
-    audit.write({ tenantId: user.tenantId, userId: user.id, action: 'consent.withdrawn', targetType: 'user', targetId: user.id, ipHash });
+    audit.write({ tenantId: user.tenantId, userId: user.id, action: 'consent.withdrawn', targetType: 'user', targetId: user.id, ipHash,
+      before: before ? { mode: before.scope === 'all' ? 'Everything I can access' : 'Only the sources I choose', sources: before.sourceIds.length } : null, after: null });
     ok(res, { withdrawn: true });
   });
 
@@ -132,6 +144,73 @@ export function registerAdminRoutes(router, s) {
     db.tx(() => { for (const [k, v] of Object.entries(body)) db.run('INSERT INTO settings (tenant_id, key, value) VALUES (?, ?, ?) ON CONFLICT(tenant_id, key) DO UPDATE SET value = excluded.value', user.tenantId, k, JSON.stringify(v)); });
     audit.write({ tenantId: user.tenantId, userId: user.id, action: 'settings.updated', ipHash, details: body });
     ok(res, tenantSettings(db, user.tenantId));
+  });
+
+  /* ---- workflow settings: city pack, holidays, warning level, admin switches ---- */
+  function workflowSettings(user) {
+    const pack = activePack(db, user.tenantId);
+    const t = todayIn(pack.timezone);
+    return {
+      pack: { id: pack.id, name: pack.name, label: pack.label, departments: pack.departments, recordTypes: pack.recordTypes, holidays: pack.holidays, holidayNote: pack.holidayNote,
+        holidaysAdded: pack.holidaysAdded, holidaysRemoved: pack.holidaysRemoved, wording: pack.wording, reviewRules: pack.reviewRules, threshold: pack.broadPlanThreshold, thresholdNote: pack.broadPlanNote,
+        sources: pack.sources, sourceMap: pack.sourceMap, knownGaps: pack.knownGaps, responseDays: pack.responseDays, timezone: pack.timezone },
+      packs: listPacks(), switches: switches(db, user.tenantId, config),
+      example: { receivedToday: t, dueIfReceivedToday: dueDate(t, new Set(pack.holidays), pack.responseDays) },
+      reuseNote: 'Reuse by other agencies is a plan, subject to agency requirements and agreed scope. No other agency uses this tool.'
+    };
+  }
+  router.on('GET', '/api/settings/workflow', ({ res, user }) => {
+    if (!user) throw new HttpError(401, 'not_signed_in', 'Sign in to continue.');
+    ok(res, workflowSettings(user));
+  });
+  router.on('PUT', '/api/settings/holidays', async ({ req, res, user, ipHash }) => {
+    requirePermission(user, 'settings.manage');
+    const body = validate({ add: { type: 'date' }, remove: { type: 'date' } }, await readJson(req));
+    const added = new Set(getSetting(db, user.tenantId, 'holidays_added', []));
+    const removed = new Set(getSetting(db, user.tenantId, 'holidays_removed', []));
+    const before = activePack(db, user.tenantId).holidays;
+    if (body.add) { added.add(body.add); removed.delete(body.add); }
+    if (body.remove) { added.delete(body.remove); removed.add(body.remove); }
+    setSetting(db, user.tenantId, 'holidays_added', [...added].sort());
+    setSetting(db, user.tenantId, 'holidays_removed', [...removed].sort());
+    // Open requests keep their stored due date in sync with the holiday list.
+    const pack = activePack(db, user.tenantId);
+    for (const r of db.all('SELECT id, received_at FROM search_requests WHERE tenant_id = ? AND received_at IS NOT NULL AND handed_off_at IS NULL', user.tenantId)) {
+      db.run('UPDATE search_requests SET due_date = ? WHERE id = ?', dueDate(r.received_at, new Set(pack.holidays), pack.responseDays), r.id);
+    }
+    audit.write({ tenantId: user.tenantId, userId: user.id, action: 'settings.updated', ipHash, details: { setting: 'holidays' }, before: before.length, after: { added: body.add ?? null, removed: body.remove ?? null } });
+    ok(res, workflowSettings(user));
+  });
+  router.on('PUT', '/api/settings/switches', async ({ req, res, user, ipHash }) => {
+    requirePermission(user, 'settings.manage');
+    const body = validate({ phoneLink: { type: 'bool' }, secondApproval: { type: 'bool' }, realSources: { type: 'bool' } }, await readJson(req));
+    if (body.realSources !== undefined && body.realSources !== config.realSources) throw new HttpError(403, 'env_only', 'Real sources are set on the server (REAL_SOURCES). They cannot be changed from the web interface.');
+    const before = switches(db, user.tenantId, config);
+    if (body.phoneLink !== undefined) {
+      if (body.phoneLink && !config.realSources) throw new HttpError(403, 'real_sources_off', 'Phone Link texts need real sources, which are off on this server.');
+      setSetting(db, user.tenantId, 'switch_phonelink', body.phoneLink);
+    }
+    if (body.secondApproval !== undefined) setSetting(db, user.tenantId, 'switch_approval', body.secondApproval);
+    const after = switches(db, user.tenantId, config);
+    audit.write({ tenantId: user.tenantId, userId: user.id, action: 'settings.updated', ipHash, details: { setting: 'admin switches' }, before, after });
+    ok(res, workflowSettings(user));
+  });
+  router.on('PUT', '/api/settings/pack', async ({ req, res, user, ipHash }) => {
+    requirePermission(user, 'settings.manage');
+    const body = validate({ pack: { type: 'string', required: true, max: 40, pattern: /^[a-z0-9-]+$/ }, threshold: { type: 'int', min: 1, max: 100000 } }, await readJson(req));
+    if (!listPacks().some(p => p.id === body.pack)) throw new HttpError(404, 'not_found', 'Unknown city pack.');
+    const before = activePack(db, user.tenantId);
+    if (before.id !== body.pack) {
+      setSetting(db, user.tenantId, 'pack', body.pack);
+      db.run("DELETE FROM settings WHERE tenant_id = ? AND key IN ('holidays_added', 'holidays_removed', 'broad_threshold')", user.tenantId);
+      audit.write({ tenantId: user.tenantId, userId: user.id, action: 'pack.switched', ipHash, before: before.id, after: body.pack });
+    }
+    if (body.threshold !== undefined) {
+      const prev = activePack(db, user.tenantId).broadPlanThreshold;
+      setSetting(db, user.tenantId, 'broad_threshold', body.threshold);
+      audit.write({ tenantId: user.tenantId, userId: user.id, action: 'settings.updated', ipHash, details: { setting: 'broad plan warning level' }, before: prev, after: body.threshold });
+    }
+    ok(res, workflowSettings(user));
   });
 
   router.on('GET', '/api/usage', ({ res, user }) => {

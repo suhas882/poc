@@ -1,7 +1,8 @@
 // Browser API client: JSON in/out, CSRF header on writes, consistent errors.
 
-export interface User { id: string; name: string; email: string; role: string; permissions: string[] }
-export interface AuthStatus { demoOnly: boolean; setupRequired: boolean; consentRequired?: boolean; user: User | null; csrfToken: string | null; offline?: boolean }
+export interface User { id: string; name: string; email: string; role: string; permissions: string[]; isDemo?: boolean; organization?: string }
+export interface Switches { realSources: boolean; phoneLink: boolean; secondApproval: boolean }
+export interface AuthStatus { realSources?: boolean; demoOnly: boolean; demoAccounts?: boolean; setupRequired: boolean; consentRequired?: boolean; user: User | null; csrfToken: string | null; offline?: boolean; pack?: { id: string; name: string; label: string } | null; switches?: Switches | null }
 export interface Page<T> { data: T; meta?: { page: number; pageSize: number; total: number; [k: string]: unknown } }
 
 export class ApiError extends Error {
@@ -20,7 +21,7 @@ export function authStatus(refresh = false): Promise<AuthStatus> {
         csrf = body.data.csrfToken;
         return body.data as AuthStatus;
       })
-      .catch(() => ({ demoOnly: true, setupRequired: false, user: null, csrfToken: null, offline: true }));
+      .catch(() => ({ demoOnly: true, setupRequired: false, user: null, csrfToken: null, offline: true } as AuthStatus));
   }
   return statusPromise;
 }

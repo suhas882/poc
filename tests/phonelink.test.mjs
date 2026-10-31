@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { startApp, waitForSync } from './helpers.mjs';
+import { startApp, waitForSync, searchReq } from './helpers.mjs';
 import { detectSchema, toIsoTime } from '../server/connectors/phonelink.mjs';
 
 const filetime = (iso) => (BigInt(Date.parse(iso)) + 11644473600000n) * 10000n;
@@ -29,9 +29,11 @@ test('Phone Link: detects schema, syncs texts without exports, refreshes before 
   const file = path.join(dir, 'phone.db');
   const phone = makePhoneDb(file);
   const env = await startApp({ PHONELINK_DB_PATH: file, PHONELINK_SYNC_MINUTES: '0' });
+  env.app.db.exec('SELECT 1');
   t.after(async () => { phone.db.close(); await env.close(); fs.rmSync(dir, { recursive: true, force: true }); });
   const c = env.client();
   await c.setup();
+  await c.put('/api/settings/switches', { phoneLink: true });
 
   assert.equal(toIsoTime(filetime('2026-10-20T03:30:00Z')), '2026-10-20T03:30:00.000Z');
   assert.equal(toIsoTime(1760931000000), new Date(1760931000000).toISOString());
@@ -73,11 +75,12 @@ test('Phone Link: detects schema, syncs texts without exports, refreshes before 
   // A new text arrives on the phone; the next search picks it up with no export and no manual sync.
   await new Promise(res => setTimeout(res, 20));
   phone.add.run(9, '+15550001111', '', 'Water main permit P-77 approved for Cedar Avenue', filetime('2026-10-29T10:00:00Z'), 1);
-  const p = await c.post('/api/searches/plan', { requestText: 'water main permit', mode: 'real' });
-  const run = await c.post(`/api/searches/${p.data.data.searchId}/run`, { plan: { ...p.data.data.plan, keywords: ['permit'], phrases: [], alternateTerms: [] }, confirmed: true });
-  assert.equal(run.status, 200, JSON.stringify(run.data));
-  const res = await c.get(`/api/searches/${p.data.data.searchId}/results?pageSize=50`);
-  assert.ok(res.data.data.some(x => x.record.sourceId === sourceId && /P-77/.test(x.snippet + x.record.title)), JSON.stringify(res.data.data.map(x => x.snippet)));
+  // The owner's own search picks up the new text right before searching (no export, no manual sync).
+  // Clerk searches see phone texts only after the employee's self-review, which is covered in workflow.test.mjs.
+  const sr = await searchReq(c, 'water main permit', { edits: { keywords: ['permit'], phrases: [], alternateTerms: [] }, sourceIds: [sourceId] });
+  assert.equal(sr.runStatus, 200, JSON.stringify(sr.runError));
+  const fresh = env.app.db.get("SELECT COUNT(*) AS n FROM records WHERE source_id = ? AND content LIKE '%P-77%'", sourceId).n;
+  assert.equal(fresh, 1, 'the new text was indexed before the search ran');
 });
 
 test('Phone Link: unknown layouts are reported, not guessed', () => {

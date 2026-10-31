@@ -3,13 +3,12 @@
   "version": "2.0.0",
   "private": true,
   "scripts": {
-    "build": "tsc -p tsconfig.json && tsc -p tsconfig.client.json && node --check app.js && node --check server.js",
+    "build": "tsc -p tsconfig.client.json && node --check server.js",
     "start": "node server.js",
     "dev": "npm run build && node server.js",
-    "test": "node --test tests/*.test.mjs && node smoke-test.js && node label-workflow-test.js",
-    "test:demo": "node smoke-test.js && node label-workflow-test.js",
+    "test": "node --test tests/*.test.mjs",
     "create-admin": "node scripts/create-admin.mjs",
-    "benchmark": "node benchmark.js"
+    "benchmark": "node scripts/benchmark.mjs"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.5.10",

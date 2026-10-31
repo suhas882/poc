@@ -1,3 +1,12 @@
+# Public Records AI Search (Round 2 proof of concept)
+
+**Staff decide. The tool finds, ranks and logs.** A clerk logs a records request; the AI drafts an editable search plan from the request text only; staff confirm and lock it; the tool searches read-only sources, ranks candidates with a reason and a passage, lists every source NOT searched, and produces an exportable search record for the city's existing process. It never decides responsiveness, exemptions, redaction or release.
+
+- Run on your PC: double-click `start.bat` (Node.js 22.13 or newer). Real sources are allowed there.
+- Hosted demo: real sources stay off (`REAL_SOURCES` unset). Visitors pick a demo role; all data is invented or openly published.
+- Tests: `npm test`. Benchmark on the labeled test set: `npm run benchmark`.
+- Status for the demo: `docs/STATUS-FOR-MADHU.md`. AI review package: `docs/AI-REVIEW-PACKAGE.md`. Setup: `docs/SETUP.md`. API: `docs/API.md`.
+
 # Public Records AI Search
 
 A staff workspace for public-records requests. Staff describe a request in plain language. Claude drafts a search plan, which staff review and confirm. The app then searches every source the person is allowed to see: Gmail, uploaded documents, imported message exports, and read-only databases. It ranks candidates with hybrid keyword and semantic retrieval, explains each match, and lets staff record relevance decisions. An optional summary cites only the retrieved records. Every action is audited.

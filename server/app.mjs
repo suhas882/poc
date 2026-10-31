@@ -20,24 +20,25 @@ import { GmailConnector } from './connectors/gmail.mjs';
 import { DatabaseConnector } from './connectors/database.mjs';
 import { PhoneLinkConnector, isPhoneLink } from './connectors/phonelink.mjs';
 import { startSync } from './routes/sources.mjs';
-import { registerDemoStateRoutes } from './routes/demo-state.mjs';
+import { registerAgentRoutes } from './routes/agent.mjs';
 import { seedSyntheticSource } from './connectors/synthetic.mjs';
 import { registerSourceRoutes } from './routes/sources.mjs';
 import { registerSearchRoutes } from './routes/search.mjs';
+import { registerWorkflowRoutes } from './routes/workflow.mjs';
+import { registerEvaluationRoutes } from './routes/evaluation.mjs';
+import { registerPhoneReviewRoutes } from './routes/phone-review.mjs';
+import { activePack, listPacks, switches } from './packs.mjs';
 import { registerAdminRoutes } from './routes/admin.mjs';
 import { applyRetention } from './retention.mjs';
 import { consentRequired } from './consent.mjs';
 
 /** Static files the server may send. Nothing else on disk is reachable. */
-const PAGES = ['index.html', 'search.html', 'evaluation.html', 'sources.html', 'history.html', 'audit.html', 'settings.html', 'login.html', 'consent.html', 'POC-VIDEO.html'];
+const PAGES = ['index.html', 'search.html', 'evaluation.html', 'sources.html', 'history.html', 'audit.html', 'settings.html', 'login.html', 'consent.html', 'report.html', 'phone-review.html', 'ai-review.html'];
 const STATIC = new Map([
   ...PAGES.map(p => [`/${p}`, [p, 'text/html; charset=utf-8']]),
   ['/', ['index.html', 'text/html; charset=utf-8']],
   ['/styles.css', ['styles.css', 'text/css; charset=utf-8']],
-  ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
-  ['/favicon.svg', ['favicon.svg', 'image/svg+xml']],
-  ['/PITCH-VIDEO-SCRIPT.md', ['PITCH-VIDEO-SCRIPT.md', 'text/markdown; charset=utf-8']],
-  ['/video-output/bellevue-public-records-poc-walkthrough.mp4', ['video-output/bellevue-public-records-poc-walkthrough.mp4', 'video/mp4']]
+  ['/favicon.svg', ['favicon.svg', 'image/svg+xml']]
 ].map(([k, v]) => [k, /** @type {[string, string]} */ (v)]));
 const CLIENT_JS = /^\/client\/[a-z0-9-]+(?:\/[a-z0-9-]+)?\.js$/;
 
@@ -51,16 +52,18 @@ export function createApp(config, deps = {}) {
   db.migrate();
   const vault = Vault.fromConfig(config, (m) => log(m));
   const audit = new AuditLog(db);
+  audit.backfill();
   const sessions = new Sessions(db, config);
   const doFetch = deps.fetch ?? fetch;
 
   const baseProvider = deps.aiProvider !== undefined ? deps.aiProvider : (config.anthropic.apiKey ? createAnthropicProvider(config.anthropic, { fetch: doFetch }) : null);
   const ai = baseProvider && !config.demoOnly ? withUsageTracking(baseProvider, db, config.anthropic) : null;
   let embedder = null, embedderError = null;
-  try { embedder = deps.embedder !== undefined ? deps.embedder : createEmbedder(config.embeddings, { fetch: doFetch }); } catch (err) { embedderError = err instanceof Error ? err.message : String(err); }
+  // Real content stays local: record text goes to an outside embedding service only once an approved model and hosting are named.
+  try { embedder = deps.embedder !== undefined ? deps.embedder : config.embeddings.recordContentApproved ? createEmbedder(config.embeddings, { fetch: doFetch }) : null; } catch (err) { embedderError = err instanceof Error ? err.message : String(err); }
 
   const services = {
-    config, db, vault, audit, sessions, ai, embedder, embedderError, log,
+    config, db, vault, audit, sessions, ai, embedder, embedderError, log, deps,
     gmail: new GmailConnector({ db, config, vault, fetch: doFetch }),
     phonelink: new PhoneLinkConnector({ db, config }),
     database: new DatabaseConnector({ db, config, vault, connectOverride: deps.connectDatabase, sqliteDir: deps.sqliteConnectorDir }),
@@ -77,8 +80,11 @@ export function createApp(config, deps = {}) {
   registerAuthRoutes(router, services);
   registerSourceRoutes(router, services);
   registerSearchRoutes(router, services);
+  registerWorkflowRoutes(router, services);
+  registerEvaluationRoutes(router, services);
+  registerPhoneReviewRoutes(router, services);
   registerAdminRoutes(router, services);
-  registerDemoStateRoutes(router, services);
+  registerAgentRoutes(router, services);
 
   /** @param {import('node:http').IncomingMessage} req @param {import('node:http').ServerResponse} res */
   async function handler(req, res) {
@@ -87,7 +93,6 @@ export function createApp(config, deps = {}) {
     try {
       if (url.pathname === '/api/health' && req.method === 'GET') return sendJson(res, 200, { ok: true, data: { status: 'ok', demoOnly: config.demoOnly } });
       if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/oauth/')) {
-        if (config.demoOnly && url.pathname !== '/api/auth/status' && !url.pathname.startsWith('/api/demo-state')) throw new HttpError(404, 'demo_only', 'This server runs the synthetic demo only. Real-data features are switched off (DEMO_ONLY=true).');
         const user = sessions.fromRequest(req);
         const rate = services.limits.api.take(user ? `u:${user.id}` : `ip:${ip}`);
         if (!rate.allowed) throw new HttpError(429, 'rate_limited', 'Too many requests. Wait a moment and try again.', { retryAfter: rate.retryAfter });
@@ -154,19 +159,57 @@ function registerAuthRoutes(router, s) {
   const { db, sessions, audit, config } = s;
 
   router.on('GET', '/api/auth/status', ({ res, user }) => {
-    const setupRequired = !config.demoOnly && !db.get('SELECT 1 FROM users LIMIT 1');
+    const setupRequired = config.realSources && !db.get('SELECT 1 FROM users u JOIN tenants t ON t.id = u.tenant_id WHERE t.is_demo = 0 LIMIT 1');
+    const tenant = user ? db.get('SELECT name, is_demo FROM tenants WHERE id = ?', user.tenantId) : null;
+    const pack = user ? activePack(db, user.tenantId) : null;
     ok(res, {
-      demoOnly: config.demoOnly,
+      realSources: config.realSources,
+      demoOnly: !config.realSources,
+      demoAccounts: !config.realSources,
       setupRequired,
-      user: user ? { id: user.id, name: user.name, email: user.email, role: user.role, permissions: ROLE_PERMISSIONS[user.role] } : null,
-      consentRequired: user ? consentRequired(db, user) : false,
+      user: user ? { id: user.id, name: user.name, email: user.email, role: user.role, permissions: ROLE_PERMISSIONS[user.role], isDemo: Boolean(tenant?.is_demo), organization: tenant?.name ?? '' } : null,
+      pack: pack ? { id: pack.id, name: pack.name, label: pack.label } : null,
+      switches: user ? switches(db, user.tenantId, config) : null,
+      consentRequired: user && config.realSources && !tenant?.is_demo ? consentRequired(db, user) : false,
       csrfToken: user?.csrfToken ?? null
     });
   });
 
+  /* Demo sign-in: invented staff accounts in a private demo organization that only holds Tier 0 data. */
+  const DEMO_PEOPLE = [['records_officer', 'Clerk reviewer A'], ['reviewer', 'Records Coordinator A'], ['admin', 'Supervisor A'], ['auditor', 'Auditor A']];
+  router.on('POST', '/api/auth/demo', async ({ req, res, user, ipHash }) => {
+    const body = validate({ role: { type: 'string', required: true, values: ROLES } }, await readJson(req));
+    if (config.realSources && !(user && db.get('SELECT is_demo FROM tenants WHERE id = ?', user.tenantId)?.is_demo)) {
+      throw new HttpError(403, 'demo_unavailable', 'Demo accounts are only offered when real sources are switched off.');
+    }
+    let tenantId = user && db.get('SELECT is_demo FROM tenants WHERE id = ?', user.tenantId)?.is_demo ? user.tenantId : null;
+    if (!tenantId) {
+      tenantId = crypto.randomUUID();
+      db.tx(() => {
+        db.run('INSERT INTO tenants (id, name, is_demo) VALUES (?, ?, 1)', tenantId, 'Demo workspace');
+        for (const [role, name] of DEMO_PEOPLE) {
+          db.run('INSERT INTO users (id, tenant_id, email, name, role, password_hash) VALUES (?, ?, ?, ?, ?, ?)', crypto.randomUUID(), tenantId,
+            `${role}.${tenantId.slice(0, 8)}@demo.invalid`, name, role, DUMMY_HASH);
+        }
+      });
+      seedSyntheticSource(db, tenantId);
+    }
+    const u = db.get('SELECT * FROM users WHERE tenant_id = ? AND role = ?', tenantId, body.role);
+    if (user) sessions.destroy(user.sessionHash);
+    const session = sessions.create(u);
+    audit.write({ tenantId, userId: u.id, action: 'auth.demo', ipHash, details: { role: body.role } });
+    sendJson(res, 200, { ok: true, data: { csrfToken: session.csrf } }, { 'Set-Cookie': session.cookie });
+  });
+
+  router.on('GET', '/api/packs', ({ res, user }) => {
+    requirePermission(user, 'sources.read');
+    ok(res, listPacks());
+  });
+
   router.on('POST', '/api/auth/setup', async (ctx) => {
     const { req, res, ip, ipHash } = ctx;
-    if (db.get('SELECT 1 FROM users LIMIT 1')) throw new HttpError(409, 'already_set_up', 'This server already has an administrator. Sign in instead.');
+    if (!config.realSources) throw new HttpError(403, 'demo_server', 'This server runs the Tier 0 demo. Use a demo account instead.');
+    if (db.get('SELECT 1 FROM users u JOIN tenants t ON t.id = u.tenant_id WHERE t.is_demo = 0 LIMIT 1')) throw new HttpError(409, 'already_set_up', 'This server already has a supervisor account. Sign in instead.');
     const body = validate({ orgName: { type: 'string', required: true, max: 120 }, name: { type: 'string', required: true, max: 120 }, email: { type: 'string', required: true, max: 254, pattern: /^[^@\s]+@[^@\s]+\.[^@\s]+$/, patternMessage: 'must be an email address' }, password: { type: 'string', required: true, trim: false, max: 200 }, setupToken: { type: 'string', max: 200 } }, await readJson(req));
     if (!isLoopback(ip) && !(config.setupToken && body.setupToken === config.setupToken)) {
       throw new HttpError(403, 'setup_locked', 'The first administrator can only be created from this computer (localhost) or with the SETUP_TOKEN set on the server.');
@@ -189,7 +232,7 @@ function registerAuthRoutes(router, s) {
     const key = `${ip}|${body.email.toLowerCase()}`;
     const limit = s.limits.login.take(key);
     if (!limit.allowed) throw new HttpError(429, 'too_many_attempts', `Too many sign-in attempts. Try again in ${Math.ceil(limit.retryAfter / 60)} minutes.`);
-    const u = db.get('SELECT * FROM users WHERE email = ?', body.email.toLowerCase());
+    const u = db.get('SELECT u.* FROM users u JOIN tenants t ON t.id = u.tenant_id WHERE u.email = ? AND t.is_demo = 0', body.email.toLowerCase());
     const locked = u?.locked_until && u.locked_until > nowIso();
     const valid = verifyPassword(body.password, u?.password_hash ?? DUMMY_HASH);
     if (!u || !valid || u.disabled || locked) {
@@ -217,7 +260,8 @@ function registerAuthRoutes(router, s) {
     const has = (m) => { try { return fs.existsSync(path.join(ROOT, 'node_modules', m)); } catch { return false; } };
     ok(res, {
       ai: { configured: Boolean(s.ai), provider: s.ai?.name ?? null, model: s.ai?.model ?? null },
-      embeddings: { configured: Boolean(s.embedder), provider: s.embedder?.provider ?? null, model: s.embedder?.model ?? null, error: s.embedderError },
+      embeddings: { configured: Boolean(s.embedder), provider: s.embedder?.provider ?? null, model: s.embedder?.model ?? null, error: s.embedderError, recordContentApproved: config.embeddings.recordContentApproved },
+      realSources: config.realSources,
       gmail: { configured: s.gmail.configured, redirectUri: config.google.redirectUri },
       encryption: { configured: Boolean(s.vault), source: config.encryptionKey ? 'environment' : s.vault ? 'development key file' : 'missing' },
       ocr: { enabled: config.ocr.enabled, installed: has('tesseract.js') },

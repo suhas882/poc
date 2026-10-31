@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { makeDocx, startApp } from './helpers.mjs';
+import { makeDocx, searchReq, startApp } from './helpers.mjs';
 
-test('search permission: asked after sign-in, limits sources, can be withdrawn', async (t) => {
+test('search permission: asked after sign-in, per-plan sources, G4 refusal is logged, old and new values audited', async (t) => {
   const env = await startApp();
   t.after(() => env.close());
   const c = env.client();
@@ -12,61 +12,64 @@ test('search permission: asked after sign-in, limits sources, can be withdrawn',
   let r = await c.get('/api/auth/status');
   assert.equal(r.data.data.consentRequired, true, 'permission is asked right after sign-in');
 
-  // Two upload sources: documents and messages.
   r = await c.upload('memo.docx', makeDocx(['Cedar Avenue closure memo'], { title: 'Cedar memo' }));
   assert.equal(r.status, 201);
   r = await c.upload('chat.txt', Buffer.from('2/3/25, 9:15 AM - Ana: Cedar Avenue closure starts Monday\n'), '?kind=messages');
   assert.equal(r.status, 201, JSON.stringify(r.data));
 
-  // Real searches are blocked until the user answers.
-  r = await c.post('/api/searches/plan', { requestText: 'Cedar Avenue closure', mode: 'real' });
+  // Real searches are blocked until the user answers; the demo still works.
+  r = await c.post('/api/requests', { text: 'Cedar Avenue closure', receivedAt: '2026-10-30', mode: 'real' });
   assert.equal(r.status, 428); assert.equal(r.data.error.code, 'consent_required');
-  // The demo stays available.
-  r = await c.post('/api/searches/plan', { requestText: 'Cedar Avenue closure', mode: 'demo' });
+  r = await c.post('/api/requests', { text: 'Cedar Avenue closure', receivedAt: '2026-10-30', mode: 'demo' });
   assert.equal(r.status, 201);
 
   r = await c.put('/api/consent', { scope: 'all', sourceIds: [] });
   assert.equal(r.status, 400, 'the acknowledgement is required');
 
-  r = await c.get('/api/consent');
-  const sources = r.data.data.sources;
-  assert.ok(sources.length >= 2, JSON.stringify(sources));
+  const sources = (await c.get('/api/consent')).data.data.sources;
   const docs = sources.find(s => s.type === 'uploads');
-  assert.ok(docs);
+  const msgs = sources.find(s => s.type === 'messages');
+  assert.ok(docs && msgs);
 
   // Only the documents source.
   r = await c.put('/api/consent', { scope: 'selected', sourceIds: [docs.id], acknowledged: true });
   assert.equal(r.status, 200, JSON.stringify(r.data));
-  assert.equal((await c.get('/api/auth/status')).data.data.consentRequired, false);
-  let p = await c.post('/api/searches/plan', { requestText: 'Cedar Avenue closure', mode: 'real' });
-  assert.equal(p.status, 201);
-  let run = await c.post(`/api/searches/${p.data.data.searchId}/run`, { plan: p.data.data.plan, confirmed: true });
-  assert.equal(run.status, 200, JSON.stringify(run.data));
-  let res = await c.get(`/api/searches/${p.data.data.searchId}/results?pageSize=100`);
-  assert.ok(res.data.data.length >= 1);
-  assert.ok(res.data.data.every(x => x.record.sourceId === docs.id), 'only the permitted source is searched');
+  let s = await searchReq(c, 'Cedar Avenue closure');
+  assert.equal(s.runStatus, 200);
+  assert.deepEqual(s.created.choices.sources.map(x => x.id), [docs.id], 'only permitted sources are offered');
+  assert.deepEqual(s.plan.sourceIds, [docs.id], 'the chosen sources are saved inside the confirmed plan');
+  assert.ok(s.results.length >= 1 && s.results.every(x => x.record.sourceId === docs.id));
 
-  // Asking for a source outside the permission returns nothing from it.
-  const other = sources.find(s => s.id !== docs.id);
-  p = await c.post('/api/searches/plan', { requestText: 'Cedar Avenue closure', mode: 'real' });
-  run = await c.post(`/api/searches/${p.data.data.searchId}/run`, { plan: { ...p.data.data.plan, sourceIds: [other.id] }, confirmed: true });
-  assert.equal(run.status, 200);
-  assert.equal(run.data.data.total, 0, 'sources outside the permission are never searched');
+  // G4: a plan naming a source outside the permission is refused, and the attempt is logged.
+  s = await searchReq(c, 'Cedar Avenue closure', { sourceIds: [docs.id, msgs.id] });
+  assert.equal(s.confirmStatus, 403);
+  assert.equal(s.confirm.data.error.code, 'source_not_permitted');
+  const refused = (await c.get('/api/audit?action=search.refused')).data.data;
+  assert.equal(refused.length, 1);
+  assert.equal(refused[0].outcome, 'denied');
 
   // Everything.
   r = await c.put('/api/consent', { scope: 'all', sourceIds: [], acknowledged: true });
   assert.equal(r.status, 200);
-  p = await c.post('/api/searches/plan', { requestText: 'Cedar Avenue closure', mode: 'real' });
-  run = await c.post(`/api/searches/${p.data.data.searchId}/run`, { plan: p.data.data.plan, confirmed: true });
-  assert.ok(run.data.data.total >= 2, JSON.stringify(run.data.data));
+  s = await searchReq(c, 'Cedar Avenue closure', { sourceIds: [docs.id, msgs.id] });
+  assert.equal(s.runStatus, 200);
+  assert.ok(s.run.candidates >= 2);
+
+  // A permission narrowed after confirmation is enforced again at search time.
+  const req = s.id;
+  r = await c.put('/api/consent', { scope: 'selected', sourceIds: [docs.id], acknowledged: true });
+  r = await c.post(`/api/requests/${req}/run`, { version: s.version });
+  assert.equal(r.status, 403, 'running a confirmed plan with a no-longer-permitted source is refused');
 
   // Withdraw.
   r = await c.del('/api/consent');
   assert.equal(r.status, 200);
-  r = await c.post('/api/searches/plan', { requestText: 'Cedar Avenue closure', mode: 'real' });
+  r = await c.post('/api/requests', { text: 'Cedar Avenue closure', receivedAt: '2026-10-30', mode: 'real' });
   assert.equal(r.status, 428);
 
-  const audit = await c.get('/api/audit?pageSize=100');
-  const actions = audit.data.data.map(e => e.action);
-  for (const a of ['consent.granted', 'consent.changed', 'consent.withdrawn']) assert.ok(actions.includes(a), a);
+  const audit = (await c.get('/api/audit?pageSize=200')).data.data;
+  const changed = audit.find(e => e.action === 'consent.changed');
+  assert.ok(changed.before && changed.after, 'permission changes record the old and new values');
+  assert.equal(changed.user.name, 'Ada Admin');
+  for (const a of ['consent.granted', 'consent.changed', 'consent.withdrawn']) assert.ok(audit.some(e => e.action === a), a);
 });

@@ -1,0 +1,221 @@
+{
+  "id": "sample-city",
+  "name": "Sample City",
+  "label": "Sample City (invented, demo only)",
+  "timezone": "America/Chicago",
+  "departments": [
+    "City Clerk",
+    "Streets and Mobility",
+    "Water Utility",
+    "Parks and Recreation",
+    "Building and Permits",
+    "Police",
+    "Finance"
+  ],
+  "recordTypes": [
+    "Email",
+    "Memo",
+    "Permit",
+    "Public notice",
+    "Contract",
+    "Meeting minutes",
+    "Report",
+    "Spreadsheet",
+    "Presentation",
+    "Text message",
+    "Chat message",
+    "Complaint",
+    "Inspection report"
+  ],
+  "sources": [
+    {
+      "key": "sharepoint",
+      "name": "SharePoint",
+      "kind": "stub",
+      "sees": "Documents on named team sites",
+      "note": "Read-only Microsoft Graph access, scoped to named sites. [SOURCE NEEDED: confirm exact permission names in Microsoft docs.]"
+    },
+    {
+      "key": "onedrive",
+      "name": "OneDrive",
+      "kind": "stub",
+      "sees": "Files in staff OneDrive folders",
+      "note": "Read-only Microsoft Graph access. [SOURCE NEEDED: confirm exact permission names in Microsoft docs.]"
+    },
+    {
+      "key": "exchange",
+      "name": "Exchange mail",
+      "kind": "stub",
+      "sees": "Staff mailboxes",
+      "note": "Same pattern as SharePoint. Mail volume is the main pain: about 6,000 emails for one request."
+    },
+    {
+      "key": "teams",
+      "name": "Teams messages",
+      "kind": "stub",
+      "sees": "Chats and channel messages",
+      "note": "[SOURCE NEEDED: confirm current Microsoft Graph rules for reading Teams messages.]"
+    }
+  ],
+  "responseDays": 5,
+  "holidays": [
+    "2026-01-01",
+    "2026-01-19",
+    "2026-05-25",
+    "2026-07-03",
+    "2026-09-07",
+    "2026-11-26",
+    "2026-12-24",
+    "2026-12-25",
+    "2027-01-01",
+    "2027-01-18",
+    "2027-05-31",
+    "2027-07-05",
+    "2027-09-06",
+    "2027-11-25",
+    "2027-12-24"
+  ],
+  "holidayNote": "Invented holiday list for the Sample City demo pack.",
+  "wording": {
+    "clock": "Sample City answers within five business days. The day a request arrives does not count.",
+    "clockOptions": "Send records, send a link, acknowledge with an estimate, ask a question, or deny.",
+    "handoff": "Handing off releases nothing. Sample City staff handle exemptions, redaction and release.",
+    "coverage": "Candidates found in the sources searched."
+  },
+  "reviewRules": {
+    "arguablyBelow": 45,
+    "approvalRole": "admin"
+  },
+  "broadPlanThreshold": 8,
+  "broadPlanNote": "Invented value for the demo pack.",
+  "sourceMap": [
+    {
+      "department": "Streets and Mobility",
+      "systems": [
+        "Exchange mail",
+        "SharePoint"
+      ],
+      "custodian": "Jordan Ellis (invented)"
+    },
+    {
+      "department": "Water Utility",
+      "systems": [
+        "Exchange mail",
+        "Asset system"
+      ],
+      "custodian": "Priya Nandakumar (invented)"
+    },
+    {
+      "department": "Parks and Recreation",
+      "systems": [
+        "SharePoint"
+      ],
+      "custodian": "Sam Okafor (invented)"
+    },
+    {
+      "department": "Building and Permits",
+      "systems": [
+        "Permit system",
+        "Exchange mail"
+      ],
+      "custodian": "Lee Moreno (invented)"
+    },
+    {
+      "department": "City Clerk",
+      "systems": [
+        "Portal",
+        "SharePoint"
+      ],
+      "custodian": "Alex Rivera (invented)"
+    }
+  ],
+  "concepts": [
+    [
+      "road closure",
+      "street closure",
+      "lane closure",
+      "detour",
+      "traffic control"
+    ],
+    [
+      "right-of-way work",
+      "street use",
+      "temporary street occupancy",
+      "excavation permit"
+    ],
+    [
+      "utility work",
+      "utility construction",
+      "water main",
+      "underground utility"
+    ],
+    [
+      "repair",
+      "maintenance",
+      "restoration"
+    ],
+    [
+      "pedestrian crossing",
+      "crosswalk",
+      "crossing"
+    ],
+    [
+      "city projects",
+      "capital projects",
+      "project update",
+      "project files"
+    ],
+    [
+      "stormwater",
+      "rainwater drains",
+      "drainage inlets",
+      "catch basins",
+      "storm inspection"
+    ],
+    [
+      "traffic signal",
+      "signal controller",
+      "intersection signal",
+      "traffic light"
+    ],
+    [
+      "permit",
+      "license",
+      "authorization",
+      "approval"
+    ],
+    [
+      "complaint",
+      "concern",
+      "grievance",
+      "service request"
+    ],
+    [
+      "contract",
+      "agreement",
+      "purchase order"
+    ],
+    [
+      "meeting minutes",
+      "meeting notes",
+      "agenda"
+    ],
+    [
+      "work zone",
+      "construction zone",
+      "road work"
+    ],
+    [
+      "alternate route",
+      "detour",
+      "bypass route"
+    ]
+  ],
+  "knownGaps": [
+    "SharePoint, OneDrive, Exchange mail and Teams are not connected. They are listed as NOT searched.",
+    "iPhone texts and WhatsApp messages are out of scope.",
+    "Android texts are experimental and off by default.",
+    "Sample City is invented for the demo. No agency uses this pack.",
+    "The tool does not decide responsiveness, exemptions, redaction or release. Staff decide."
+  ]
+}

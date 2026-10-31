@@ -1,0 +1,267 @@
+{
+  "id": "bellevue",
+  "name": "City of Bellevue",
+  "label": "Bellevue (design partner)",
+  "timezone": "America/Los_Angeles",
+  "departments": [
+    "City Clerk",
+    "City Manager's Office",
+    "City Attorney",
+    "Transportation",
+    "Utilities",
+    "Parks & Community Services",
+    "Development Services",
+    "Community Development",
+    "Finance & Asset Management",
+    "Human Resources",
+    "Information Technology",
+    "Police",
+    "Fire"
+  ],
+  "recordTypes": [
+    "Email",
+    "Memo",
+    "Permit",
+    "Public notice",
+    "Contract",
+    "Meeting minutes",
+    "Report",
+    "Spreadsheet",
+    "Presentation",
+    "Text message",
+    "Chat message",
+    "Complaint",
+    "Inspection report"
+  ],
+  "sources": [
+    {
+      "key": "sharepoint",
+      "name": "SharePoint",
+      "kind": "stub",
+      "sees": "Documents on named team sites",
+      "note": "Read-only Microsoft Graph access, scoped to named sites. [SOURCE NEEDED: confirm exact permission names in Microsoft docs.]"
+    },
+    {
+      "key": "onedrive",
+      "name": "OneDrive",
+      "kind": "stub",
+      "sees": "Files in staff OneDrive folders",
+      "note": "Read-only Microsoft Graph access. [SOURCE NEEDED: confirm exact permission names in Microsoft docs.]"
+    },
+    {
+      "key": "exchange",
+      "name": "Exchange mail",
+      "kind": "stub",
+      "sees": "Staff mailboxes",
+      "note": "Same pattern as SharePoint. Mail volume is the main pain: about 6,000 emails for one request."
+    },
+    {
+      "key": "teams",
+      "name": "Teams messages",
+      "kind": "stub",
+      "sees": "Chats and channel messages",
+      "note": "[SOURCE NEEDED: confirm current Microsoft Graph rules for reading Teams messages.]"
+    }
+  ],
+  "responseDays": 5,
+  "holidays": [
+    "2026-01-01",
+    "2026-01-19",
+    "2026-02-16",
+    "2026-05-25",
+    "2026-06-19",
+    "2026-07-03",
+    "2026-09-07",
+    "2026-11-11",
+    "2026-11-26",
+    "2026-11-27",
+    "2026-12-25",
+    "2027-01-01",
+    "2027-01-18",
+    "2027-02-15",
+    "2027-05-31",
+    "2027-06-18",
+    "2027-07-05",
+    "2027-09-06",
+    "2027-11-11",
+    "2027-11-25",
+    "2027-11-26",
+    "2027-12-24"
+  ],
+  "holidayNote": "Washington state legal holidays (RCW 1.16.050), with weekend holidays moved to the nearest weekday. Confirm Bellevue's observed list.",
+  "wording": {
+    "clock": "Five business days to respond. The day of receipt does not count.",
+    "clockOptions": "Provide records, give a link, acknowledge with a time estimate, ask for clarification, or deny.",
+    "handoff": "Handing off releases nothing. Exemptions, redaction and release stay in the city's process.",
+    "coverage": "Candidates found in the sources searched."
+  },
+  "reviewRules": {
+    "arguablyBelow": 40,
+    "approvalRole": "admin"
+  },
+  "broadPlanThreshold": 12,
+  "broadPlanNote": "Demo value for the small Tier 0 corpus. Set from Bellevue's guidance.",
+  "sourceMap": [
+    {
+      "department": "City Clerk",
+      "systems": [
+        "Exchange mail",
+        "SharePoint"
+      ],
+      "custodian": "Records Coordinator [NEEDS HUMAN INPUT: name from Bellevue]"
+    },
+    {
+      "department": "Transportation",
+      "systems": [
+        "Exchange mail",
+        "SharePoint"
+      ],
+      "custodian": "Records Coordinator [NEEDS HUMAN INPUT: name from Bellevue]"
+    },
+    {
+      "department": "Utilities",
+      "systems": [
+        "Exchange mail",
+        "SharePoint"
+      ],
+      "custodian": "Records Coordinator [NEEDS HUMAN INPUT: name from Bellevue]"
+    },
+    {
+      "department": "Parks & Community Services",
+      "systems": [
+        "Exchange mail",
+        "SharePoint"
+      ],
+      "custodian": "Records Coordinator [NEEDS HUMAN INPUT: name from Bellevue]"
+    },
+    {
+      "department": "Development Services",
+      "systems": [
+        "Exchange mail",
+        "SharePoint"
+      ],
+      "custodian": "Records Coordinator [NEEDS HUMAN INPUT: name from Bellevue]"
+    },
+    {
+      "department": "Police",
+      "systems": [
+        "Exchange mail",
+        "SharePoint"
+      ],
+      "custodian": "Records Coordinator [NEEDS HUMAN INPUT: name from Bellevue]"
+    },
+    {
+      "department": "Fire",
+      "systems": [
+        "Exchange mail",
+        "SharePoint"
+      ],
+      "custodian": "Records Coordinator [NEEDS HUMAN INPUT: name from Bellevue]"
+    },
+    {
+      "department": "Finance & Asset Management",
+      "systems": [
+        "Exchange mail",
+        "SharePoint"
+      ],
+      "custodian": "Records Coordinator [NEEDS HUMAN INPUT: name from Bellevue]"
+    },
+    {
+      "department": "City Attorney",
+      "systems": [
+        "Exchange mail",
+        "SharePoint"
+      ],
+      "custodian": "Records Coordinator [NEEDS HUMAN INPUT: name from Bellevue]"
+    }
+  ],
+  "concepts": [
+    [
+      "road closure",
+      "street closure",
+      "lane closure",
+      "detour",
+      "traffic control"
+    ],
+    [
+      "right-of-way work",
+      "street use",
+      "temporary street occupancy",
+      "excavation permit"
+    ],
+    [
+      "utility work",
+      "utility construction",
+      "water main",
+      "underground utility"
+    ],
+    [
+      "repair",
+      "maintenance",
+      "restoration"
+    ],
+    [
+      "pedestrian crossing",
+      "crosswalk",
+      "crossing"
+    ],
+    [
+      "city projects",
+      "capital projects",
+      "project update",
+      "project files"
+    ],
+    [
+      "stormwater",
+      "rainwater drains",
+      "drainage inlets",
+      "catch basins",
+      "storm inspection"
+    ],
+    [
+      "traffic signal",
+      "signal controller",
+      "intersection signal",
+      "traffic light"
+    ],
+    [
+      "permit",
+      "license",
+      "authorization",
+      "approval"
+    ],
+    [
+      "complaint",
+      "concern",
+      "grievance",
+      "service request"
+    ],
+    [
+      "contract",
+      "agreement",
+      "purchase order"
+    ],
+    [
+      "meeting minutes",
+      "meeting notes",
+      "agenda"
+    ],
+    [
+      "work zone",
+      "construction zone",
+      "road work"
+    ],
+    [
+      "alternate route",
+      "detour",
+      "bypass route"
+    ]
+  ],
+  "knownGaps": [
+    "SharePoint, OneDrive, Exchange mail and Teams are not connected in this proof of concept. They are listed as NOT searched.",
+    "iPhone texts and WhatsApp messages are out of scope.",
+    "Android texts (Phone Link) are experimental and off by default. Only recent texts are available, picture messages are not included, and it is never a search of all texts.",
+    "Bellevue's system of record is not confirmed. No portal integration is built.",
+    "The tool does not decide responsiveness, exemptions, redaction or release. Staff decide."
+  ]
+}

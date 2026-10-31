@@ -66,3 +66,9 @@ The original README sets two gates: no model calls until Bellevue's approved mod
 - People who are not signed in are identified by a private browser cookie (`prs_device`). When they sign in, their demo work moves to their account, so it is the same on any browser they sign in from.
 - API: `GET /api/demo-state`, `PUT /api/demo-state/:key` with `{ value }`, and `DELETE /api/demo-state/:key`. Only the seven known demo keys are accepted, up to 1 MB each. This also works on `DEMO_ONLY` servers.
 - Real data was already stored in SQLite and is unchanged.
+
+## PC sync helper (Phone Link → hosted server)
+
+- `agent/phonelink-sync.mjs` and `phonelink-sync.bat` read Phone Link on the Windows PC and send changed conversation-days to the hosted site over HTTPS, using a revocable per-PC key (only its hash is stored). The key can only add texts to its own private source.
+- It refuses plain http to remote hosts, only sends days whose content changed, and resends everything if the server's source is empty (for example after Render's free disk was wiped).
+- Covered by `tests/agent.test.mjs`, which runs the real helper program against the app.

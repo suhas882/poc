@@ -1,3 +1,16 @@
+# Setup
+
+## Two ways to run it
+
+| | Real sources | Sign-in |
+|---|---|---|
+| Your PC (`start.bat`) | Allowed (`REAL_SOURCES=true` is set by start.bat) | Create the first Supervisor account at http://localhost:8765 |
+| Hosted demo (Render, later AWS) | Off. Leave `REAL_SOURCES` unset. | Visitors choose a demo role. Each visitor gets a private workspace with invented accounts, deleted after three days. |
+
+With real sources off, the server refuses Gmail, staff uploads, message imports, database connectors, Phone Link and the PC sync helper. Only invented records and public documents (with web address, retrieval date and a terms check) are allowed. Nothing in the web interface can turn real sources on.
+
+Admin switches in Settings (off by default): Phone Link texts (needs real sources) and second-person approval. City packs (Bellevue, Sample City) hold departments, record types, holidays, wording, review rules, the broad-plan warning level and the source map.
+
 # Setup, configuration and deployment
 
 ## 1. Requirements
@@ -115,3 +128,21 @@ How it behaves:
 | Database: `schema_changed` | A mapped column was renamed or dropped. Remove and reconnect the source with the new columns. |
 | Plans say "Drafted by local rules" | Claude isn't configured or the call failed; the reason is shown on the plan. Check Settings and the server log. |
 | Images upload but aren't searchable | OCR is unavailable; see the note on the uploaded file and section 7. |
+
+## Hosting on Render or AWS: keep the data
+
+The app stores everything in one SQLite file (`DATA_DIR/records.db`). That folder has to survive restarts and deploys:
+
+- **Render:** the free plan's disk is erased on every deploy and restart (and free services restart after about 15 idle minutes). Use a paid instance with a **persistent disk**, and set `DATA_DIR` to its mount path (see the comments in `render.yaml`). Set `PUBLIC_URL` to your https address.
+- **AWS:** run it on EC2 or Lightsail with an EBS volume (or the instance's own disk), with `DATA_DIR` pointing at that volume. Put it behind HTTPS (a load balancer, CloudFront, or Caddy/nginx) and set `PUBLIC_URL`. Take EBS snapshots for backups. Avoid platforms whose disks reset (for example App Runner or Fargate without EFS).
+- Set `CREDENTIAL_ENCRYPTION_KEY` in the host's environment so stored credentials can still be decrypted after a move.
+
+## Android texts on a hosted server: PC sync helper
+
+A hosted server cannot read files on your PC, so Phone Link texts reach it through a small helper on the Windows PC:
+
+1. On the website, go to Connected Sources → Android texts (Phone Link) → **PC sync helper**, and create a key (shown once).
+2. On the Windows PC where Phone Link is set up, in this project folder, double-click `phonelink-sync.bat`. Paste the site's https address and the key.
+3. It sends your texts, then checks for new ones every few minutes. To run it at sign-in, put a shortcut to `phonelink-sync.bat` in `shell:startup`.
+
+Options: `phonelink-sync.bat --once` (send what is new, then exit), `--full` (resend everything), `--setup` (change the address or key). The key is saved in `agent/phonelink-sync.json`, which is in `.gitignore`. Keep it private, and revoke it on the website if the PC is lost. If the server's data was reset, the helper notices the source is empty and sends everything again.

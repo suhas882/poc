@@ -10,6 +10,29 @@ import { fileURLToPath } from 'node:url';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
+/**
+ * Google's downloaded OAuth client file ("client_secret_....json"), used when GOOGLE_CLIENT_ID is not set.
+ * Looked for at GOOGLE_CLIENT_FILE, then in the data folder, then in the project folder. Both places are git-ignored.
+ */
+const googleCache = new Map();
+function googleFile(env, dataDir) {
+  const key = `${env.GOOGLE_CLIENT_FILE || ''}|${dataDir}`;
+  if (googleCache.has(key)) return googleCache.get(key);
+  let out = { clientId: '', clientSecret: '', file: null };
+  const candidates = env.GOOGLE_CLIENT_FILE ? [env.GOOGLE_CLIENT_FILE] : [dataDir, ROOT].flatMap(dir => {
+    try { return fs.readdirSync(dir).filter(f => /^client_secret.*\.json$/i.test(f)).sort().map(f => path.join(dir, f)); } catch { return []; }
+  });
+  for (const file of candidates) {
+    try {
+      const j = JSON.parse(fs.readFileSync(file, 'utf8'));
+      const c = j.web || j.installed;
+      if (c?.client_id && c?.client_secret) { out = { clientId: c.client_id, clientSecret: c.client_secret, file }; break; }
+    } catch { /* not a Google client file */ }
+  }
+  googleCache.set(key, out);
+  return out;
+}
+
 /** Minimal .env loader: KEY=VALUE lines, optional quotes, # comments. Never overrides real env vars. */
 export function loadDotEnv(file = path.join(ROOT, '.env'), env = process.env) {
   if (!fs.existsSync(file)) return;
@@ -44,8 +67,13 @@ export function getConfig(env = process.env) {
     trustProxy: bool(env.TRUST_PROXY, false),
     dataDir,
     dbPath: env.DATABASE_PATH ? path.resolve(env.DATABASE_PATH) : path.join(dataDir, 'records.db'),
-    /** When true the server only serves the synthetic demo: no sign-in, connectors or AI calls. */
-    demoOnly: bool(env.DEMO_ONLY, false),
+    /**
+     * Real sources (mail, uploads of staff files, databases, Phone Link) are off unless REAL_SOURCES=true is set on the
+     * server. The hosted demo leaves it unset, so it only ever holds Tier 0 data: invented records and public documents.
+     * Nothing in the web interface can turn it on. DEMO_ONLY=true (older setting) always forces it off.
+     */
+    realSources: bool(env.REAL_SOURCES, false) && !bool(env.DEMO_ONLY, false),
+    demoOnly: false,
     setupToken: env.SETUP_TOKEN || '',
     sessionTtlHours: int(env.SESSION_TTL_HOURS, 12),
     encryptionKey: env.CREDENTIAL_ENCRYPTION_KEY || '',
@@ -68,11 +96,13 @@ export function getConfig(env = process.env) {
       apiKey: env.EMBEDDINGS_API_KEY || env.VOYAGE_API_KEY || '',
       model: env.EMBEDDINGS_MODEL || '',
       baseUrl: (env.EMBEDDINGS_BASE_URL || '').replace(/\/+$/, ''),
-      batchSize: int(env.EMBEDDINGS_BATCH_SIZE, 64)
+      batchSize: int(env.EMBEDDINGS_BATCH_SIZE, 64),
+      /** Record text is sent to an outside embedding service only after an approved model and hosting are named. */
+      recordContentApproved: bool(env.EMBEDDINGS_RECORD_CONTENT_APPROVED, false)
     }),
     google: Object.freeze({
-      clientId: env.GOOGLE_CLIENT_ID || '',
-      clientSecret: env.GOOGLE_CLIENT_SECRET || '',
+      clientId: env.GOOGLE_CLIENT_ID || googleFile(env, dataDir).clientId,
+      clientSecret: env.GOOGLE_CLIENT_SECRET || googleFile(env, dataDir).clientSecret,
       redirectUri: env.GOOGLE_REDIRECT_URI || `${publicUrl}/oauth/google/callback`,
       authUrl: env.GOOGLE_AUTH_URL || 'https://accounts.google.com/o/oauth2/v2/auth',
       tokenUrl: env.GOOGLE_TOKEN_URL || 'https://oauth2.googleapis.com/token',

@@ -8,8 +8,8 @@ interface Consent { scope: 'all' | 'selected'; sourceIds: string[]; grantedAt: s
 const next = (() => { const n = new URLSearchParams(location.search).get('next') || '/'; return n.startsWith('/') && !n.startsWith('//') && !n.startsWith('/consent') ? n : '/'; })();
 
 async function main() {
-  const status = await initShell({ realOnly: true });
-  const root = $('#consent-root')!;
+  const status = await initShell({ title: 'Search permission' });
+  const root = h('section', { class: 'card' }); replace($('#root')!, root);
   if (!status.user) return;
   if (!status.user.permissions.includes('search.run')) { location.replace(next); return; }
   let data: { consent: Consent | null; sources: Source[] };
@@ -17,13 +17,16 @@ async function main() {
   catch (e) { replace(root, alertBox(e instanceof ApiError ? e.message : 'Could not load.')); return; }
   const existing = data.consent;
 
-  const all = h('input', { type: 'radio', name: 'scope', value: 'all', checked: !existing || existing.scope === 'all' }) as HTMLInputElement;
-  const some = h('input', { type: 'radio', name: 'scope', value: 'selected', checked: existing?.scope === 'selected' }) as HTMLInputElement;
+  // Safe by default: “Only the sources I choose” is pre-selected; “Everything I can access” never is.
+  const all = h('input', { type: 'radio', name: 'scope', value: 'all', checked: existing?.scope === 'all' }) as HTMLInputElement;
+  const some = h('input', { type: 'radio', name: 'scope', value: 'selected', checked: !existing || existing.scope === 'selected' }) as HTMLInputElement;
+  const stubs = (await get<{ pack: { sources: { name: string }[] } }>('/api/settings/workflow').then(r => r.data.pack.sources).catch(() => []));
   const chosen = new Set(existing?.sourceIds || []);
   const boxes = data.sources.map(s => h('input', { type: 'checkbox', value: s.id, checked: chosen.has(s.id) }) as HTMLInputElement);
   const list = h('div', { class: 'consent-sources' }, data.sources.length
     ? data.sources.map((s, i) => h('label', { class: 'consent-source' }, boxes[i], h('span', null, h('b', null, s.name), h('small', null, `${SOURCE_LABEL[s.type] || s.type} · ${fmtNum(s.records)} records · ${s.isOwn ? 'connected by you' : 'shared with you'}`))))
-    : h('p', { class: 'helper' }, 'No sources are connected yet. If you choose this option, add sources here later from Settings.'));
+    : h('p', { class: 'helper' }, 'No sources are connected yet. If you choose this option, add sources here later from Settings.'),
+    stubs.map(st => h('label', { class: 'consent-source is-off' }, h('input', { type: 'checkbox', disabled: true }), h('span', null, h('b', null, st.name), h('small', null, 'Not connected. Cannot be selected.')))));
   const syncList = () => { list.hidden = !some.checked; };
   all.addEventListener('change', syncList); some.addEventListener('change', syncList); syncList();
   const ack = h('input', { type: 'checkbox' }) as HTMLInputElement;
@@ -31,7 +34,7 @@ async function main() {
   const out = h('div');
 
   replace(root,
-    h('p', { class: 'eyebrow consent-eyebrow' }, existing ? 'YOUR SEARCH PERMISSION' : 'BEFORE YOU SEARCH'),
+    h('p', { class: 'label' }, existing ? 'Your search permission' : 'Before you search'),
     h('h1', null, existing ? 'What this app may search for you' : 'Allow this app to search records for you?'),
     h('p', { class: 'lead-text' }, `Signed in as ${status.user.name}. Searches only ever cover records your role is allowed to see. Here you decide whether the app may search all of them, or only the sources you choose.`),
     h('div', { class: 'consent-facts' },
@@ -39,15 +42,15 @@ async function main() {
       h('div', null, h('b', null, 'What it never does'), h('p', null, 'Send, change or delete anything in your mailbox or databases, or read your phone. Phone messages only arrive as exports someone uploads.')),
       h('div', null, h('b', null, 'Who sees results'), h('p', null, 'Only you, plus anyone you share a search export with. Every search and opened record is written to the audit log.'))),
     h('fieldset', { class: 'consent-choice' }, h('legend', null, 'What may the app search?'),
+      h('label', { class: 'consent-option' }, some, h('span', null, h('b', null, 'Only the sources I choose'), h('span', { class: 'pill ok' }, 'Recommended'), h('small', null, 'Nothing else is searched, even if more sources are connected later.'))),
       h('label', { class: 'consent-option' }, all, h('span', null, h('b', null, 'Everything I can access'), h('small', null, 'All current sources, and new ones as they are connected or shared with you.'))),
-      h('label', { class: 'consent-option' }, some, h('span', null, h('b', null, 'Only the sources I choose'), h('small', null, 'Nothing else is searched, even if more sources are connected later.'))),
       list),
     h('label', { class: 'inline-check consent-ack' }, ack, 'I understand that my searches, opened records and exports are logged for auditing.'),
     out,
     h('div', { class: 'form-row' }, allow,
       existing ? h('button', { type: 'button', class: 'button danger', on: { click: withdraw } }, 'Withdraw permission')
         : h('button', { type: 'button', class: 'button secondary', on: { click: notNow } }, 'Not now (use the demo)')),
-    h('p', { class: 'helper' }, 'You can change or withdraw this at any time in Settings. Withdrawing stops real-data searches until you allow them again.'));
+    h('p', { class: 'helper' }, 'Searches on real records stay blocked until you choose. The demo works without it. You can change or withdraw this in Settings. Every change is logged with the old value, the new value, who and when.'));
 
   allow.addEventListener('click', async () => {
     replace(out);

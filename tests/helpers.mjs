@@ -10,7 +10,7 @@ import { createApp } from '../server/app.mjs';
 
 export async function startApp(env = {}, deps = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'prs-test-'));
-  const config = getConfig({ DATA_DIR: dir, OCR_ENABLED: 'false', RATE_LIMIT_API_PER_MINUTE: '10000', RATE_LIMIT_SEARCH_PER_MINUTE: '1000', ...env });
+  const config = getConfig({ DATA_DIR: dir, OCR_ENABLED: 'false', REAL_SOURCES: 'true', RATE_LIMIT_API_PER_MINUTE: '10000', RATE_LIMIT_SEARCH_PER_MINUTE: '1000', ...env });
   const logs = [];
   const app = createApp(config, { log: (...a) => logs.push(a.join(' ')), ...deps });
   const server = http.createServer(app.handler);
@@ -155,4 +155,22 @@ export function makePdf(lines, { title = 'Test PDF' } = {}) {
   out += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets.map(o => String(o).padStart(10, '0') + ' 00000 n \n').join('')}`;
   out += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R /Info 6 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
   return Buffer.from(out, 'latin1');
+}
+
+/**
+ * Walk the request workflow: log a request, apply plan edits, confirm (locks the version), run, then read results.
+ * Returns everything a test needs. Assertions on status codes are left to the caller where a step may fail on purpose.
+ */
+export async function searchReq(c, text, { edits = {}, mode = 'real', sourceIds = null, receivedAt = '2026-10-30' } = {}) {
+  const r = await c.post('/api/requests', { text, receivedAt, mode });
+  if (r.status !== 201) return { createStatus: r.status, create: r };
+  const req = r.data.data;
+  const plan = { ...req.current.plan, ...edits };
+  const u = await c.put(`/api/requests/${req.id}/plan`, { plan, sourceIds: sourceIds ?? req.current.sourceIds });
+  const version = u.data.data.current.version;
+  const confirm = await c.post(`/api/requests/${req.id}/plan/confirm`, { version, reviewed: true });
+  if (confirm.status !== 200) return { id: req.id, created: req, confirm, confirmStatus: confirm.status };
+  const run = await c.post(`/api/requests/${req.id}/run`, { version });
+  const res = await c.get(`/api/requests/${req.id}/results?pageSize=200`);
+  return { id: req.id, ref: req.ref, created: req, plan: u.data.data.current.plan, origin: req.current.origin, version, confirm, runStatus: run.status, run: run.data.data, runError: run.data.error, results: res.data.data, meta: res.data.meta };
 }

@@ -116,5 +116,41 @@ export function field(label: string, control: HTMLElement, hint?: string) {
   return h('div', { class: 'field' }, h('label', { for: id }, label), control, hint ? h('p', { class: 'hint' }, hint) : null);
 }
 
-export const ROLE_LABEL: Record<string, string> = { admin: 'Administrator', records_officer: 'Records officer', reviewer: 'Reviewer', auditor: 'Auditor' };
-export const SOURCE_LABEL: Record<string, string> = { gmail: 'Gmail', uploads: 'Uploaded document', messages: 'Message import', database: 'Database', synthetic: 'Synthetic demo' };
+export const ROLE_LABEL: Record<string, string> = { admin: 'Supervisor', records_officer: 'Clerk', reviewer: 'Records Coordinator', auditor: 'Auditor' };
+export const SOURCE_LABEL: Record<string, string> = { gmail: 'Gmail', uploads: 'Uploaded document', messages: 'Message import', database: 'Database', synthetic: 'Synthetic corpus', stub: 'Not connected' };
+export const MARK_LABEL: Record<string, string> = { relevant: 'Relevant', not_relevant: 'Not relevant', unsure: 'Unsure' };
+
+/** Status pill: an icon character plus words, never color alone. */
+export function pill(kind: 'ok' | 'bad' | 'warn' | 'info' | 'teal' | 'gray' | 'draft', text: string, icon = '') {
+  return h('span', { class: `pill ${kind}` }, icon ? h('span', { 'aria-hidden': 'true' }, icon) : null, text);
+}
+
+/** Five-step tracker: Request, Search plan, Search, Review, Report. */
+export function tracker(current: number, requestId?: string) {
+  const steps: [string, string][] = [['Request', '/'], ['Search plan', '/'], ['Search', '/search.html'], ['Review', '/search.html'], ['Report', '/report.html']];
+  return h('ol', { class: 'tracker', 'aria-label': 'Progress' }, steps.map(([name, href], i) => {
+    const n = i + 1, state = n < current ? 'done' : n === current ? 'current' : '';
+    const label = [h('span', { class: 'num', 'aria-hidden': 'true' }, n < current ? '\u2713' : String(n)), h('span', { class: 'step-name' }, name)];
+    return h('li', { class: state, 'aria-current': n === current ? 'step' : undefined },
+      requestId && n <= Math.max(current, 2) ? h('a', { href: `${href}?id=${encodeURIComponent(requestId)}`, class: 'tracker-link' }, ...label) : label,
+      h('span', { class: 'visually-hidden' }, state === 'done' ? ' (done)' : state === 'current' ? ' (current step)' : ''));
+  }));
+}
+
+/** Days-left ring for the response clock. Words always accompany the number. */
+export function deadlineRing(daysLeft: number | null, total = 5) {
+  const pct = daysLeft === null ? 0 : Math.max(0, Math.min(100, (daysLeft / total) * 100));
+  const ring = h('div', { class: `ring${daysLeft !== null && daysLeft < 0 ? ' late' : daysLeft !== null && daysLeft <= 1 ? ' warn' : ''}`, role: 'img', 'aria-label': daysLeft === null ? 'No due date' : `${daysLeft} business days left` }, h('span', null, daysLeft === null ? '?' : String(Math.max(daysLeft, 0))));
+  ring.style.setProperty('--p', String(daysLeft !== null && daysLeft < 0 ? 100 : pct));
+  return ring;
+}
+
+export function deadlinePill(label: string, daysLeft: number | null) {
+  if (daysLeft === null) return pill('gray', 'No date');
+  return daysLeft < 0 ? pill('bad', label, '!') : daysLeft === 0 ? pill('warn', label, '!') : daysLeft <= 2 ? pill('warn', label) : pill('ok', label);
+}
+
+export function download(url: string) {
+  const a = h('a', { href: url, download: '' });
+  document.body.appendChild(a); a.click(); a.remove();
+}
