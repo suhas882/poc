@@ -64,7 +64,10 @@ function savePlan() { const plan = {}; for (const id of ['request-text', 'topics
     localStorage.setItem('synthetic-demo-actor', $('demo-actor')?.value || 'Clerk reviewer A');
 }
 catch { } ; return plan; }
-function initThemePicker() { const allowed = ['archive', 'signal', 'field-notes'], saved = loadStored('synthetic-ui-theme', 'archive'), initial = allowed.includes(saved) ? saved : 'archive'; document.documentElement.dataset.theme = initial; const buttons = [...document.querySelectorAll('[data-theme-choice]')]; const apply = (theme) => { if (!allowed.includes(theme))
+function initThemePicker() { if (!document.querySelector('[data-theme-choice]')) {
+    document.documentElement.dataset.theme = 'archive';
+    return;
+} const allowed = ['archive', 'signal', 'field-notes'], saved = loadStored('synthetic-ui-theme', 'archive'), initial = allowed.includes(saved) ? saved : 'archive'; document.documentElement.dataset.theme = initial; const buttons = [...document.querySelectorAll('[data-theme-choice]')]; const apply = (theme) => { if (!allowed.includes(theme))
     return; document.documentElement.dataset.theme = theme; buttons.forEach(button => button.setAttribute('aria-pressed', String(button.dataset.themeChoice === theme))); try {
     localStorage.setItem('synthetic-ui-theme', JSON.stringify(theme));
 }
@@ -72,6 +75,11 @@ catch { } }; buttons.forEach(button => button.addEventListener('click', () => ap
 function loadActiveScenario() { const id = loadStored('synthetic-active-request-id', scenarios[0].id); return scenarios.find(s => s.id === id) || scenarios[0]; }
 function init() {
     initThemePicker();
+    // Real data mode is handled by client/pages/*.js; the synthetic demo engine stays idle.
+    if (document.body?.dataset.mode === 'real' || !['request', 'search', 'evaluation'].includes(page())) {
+        renderLog();
+        return;
+    }
     const p = page();
     if (p === 'request') {
         const select = $('request-select');

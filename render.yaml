@@ -1,3 +1,5 @@
+# Public preview: the synthetic demo only (DEMO_ONLY=true). Render's free disk is wiped on every
+# deploy, so real data mode needs a paid instance with a persistent disk. See docs/SETUP.md.
 services:
   - type: web
     name: public-records-ai-search-poc
@@ -6,3 +8,8 @@ services:
     buildCommand: npm ci && npm run build
     startCommand: node server.js
     healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 22.13.0
+      - key: DEMO_ONLY
+        value: "true"

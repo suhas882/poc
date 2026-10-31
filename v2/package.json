@@ -1,0 +1,36 @@
+{
+  "name": "public-records-search-v2",
+  "private": true,
+  "version": "2.0.0",
+  "type": "module",
+  "description": "Public Records AI Search POC rebuilt with React + TypeScript (Vite). Synthetic data only.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "typecheck": "tsc -b",
+    "test": "vitest run",
+    "benchmark": "vite-node scripts/benchmark.ts",
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "@fontsource-variable/public-sans": "5.3.0",
+    "@fontsource-variable/source-serif-4": "5.3.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-router-dom": "6.28.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "@vitejs/plugin-react": "4.3.4",
+    "jsdom": "25.0.1",
+    "typescript": "5.6.3",
+    "vite": "5.4.11",
+    "vite-node": "2.1.5",
+    "vitest": "2.1.5"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

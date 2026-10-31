@@ -4,3 +4,8 @@ feedback.jsonl
 tmp/
 .video-build/
 node_modules/
+data/
+.env
+*.db
+*.db-wal
+*.db-shm

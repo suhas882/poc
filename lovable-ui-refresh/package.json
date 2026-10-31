@@ -1,0 +1,13 @@
+{
+  "name": "bellevue-public-records-search-poc",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node --check app.js && node --check server.js",
+    "start": "node server.js",
+    "dev": "npm run build && node server.js"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  }
+}

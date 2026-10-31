@@ -4,19 +4,33 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Search Results | Public Records Search POC</title>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css"><link rel="icon" href="/favicon.svg" type="image/svg+xml">
 </head>
-<body data-page="search"><a class="skip-link" href="#main">Skip to main content</a>
-  <header class="topbar"><div class="brand"><span class="brand-mark">B</span><div><strong>Public Records Search</strong><small>City Clerk staff demo · synthetic data only</small></div></div><div class="theme-picker" role="group" aria-label="Choose interface design"><span class="theme-picker-label">DESIGN</span><button type="button" data-theme-choice="archive" aria-pressed="true">Archive</button><button type="button" data-theme-choice="signal" aria-pressed="false">Signal</button><button type="button" data-theme-choice="field-notes" aria-pressed="false">Field Notes</button></div><span class="local-tag"><i></i> Local demo</span></header>
-  <nav class="page-nav" aria-label="Main navigation"><a href="/">Request &amp; Plan</a><a class="active" href="/search.html">Search Results</a><a href="/evaluation.html">Evaluation</a></nav>
-  <main class="page-shell" id="main" tabindex="-1">
+<body data-page="search"><a class="skip-link" href="#main">Skip to main content</a><header class="topbar"><div class="brand"><span class="brand-mark">B</span><div><strong>Public Records Search</strong><small>City Clerk staff workspace</small></div></div><div class="topbar-controls"><div class="theme-picker mode-picker" id="mode-switch" role="group" aria-label="Data mode"></div><div class="user-box" id="user-box"></div></div></header>
+<nav class="page-nav" id="main-nav" aria-label="Main navigation"><a href="/">Request &amp; Plan</a><a href="/search.html">Search Results</a><a href="/sources.html">Connected Sources</a><a href="/history.html">Search History</a><a href="/evaluation.html">Evaluation</a><a href="/audit.html">Audit Logs</a><a href="/settings.html">Settings</a></nav>
+<div class="mode-banner" id="mode-banner" role="note"></div>
+  <main class="page-shell" id="main" tabindex="-1"><div class="demo-only">
     <section class="intro compact-intro"><div><p class="eyebrow">STEP 2 · SYNTHETIC SEARCH</p><h1>Candidate desk<span class="title-period">.</span></h1><p class="lede" id="active-request">Load or edit a request and plan first.</p></div><div class="guardrail"><span class="shield">✓</span><div><b>Staff stay in control</b><p>These are search candidates. Staff decide responsiveness and disclosure.</p></div></div></section>
     <div class="page-content search-workspace">
       <section class="card results-card"><div class="card-heading"><div><span class="step">01</span><h2>Ranked candidates</h2></div><span id="result-count" class="micro"></span></div><div class="result-tools"><div class="tabs" role="tablist" aria-label="Search method"><button class="tab active" data-mode="hybrid" role="tab" aria-selected="true">Concept + keyword</button><button class="tab" data-mode="keyword" role="tab" aria-selected="false">Keyword baseline</button></div><div class="sort-note">Open a passage to inspect the match</div></div><div id="results"></div><div id="empty-state" class="empty" hidden>No candidates match these terms and filters. Revise the plan or remove a filter.</div><p class="review-note">Ranking is a retrieval aid, not a legal determination. No record is released or exempted by this tool.</p><div class="search-actions"><button id="search-again" class="button secondary">Re-run this search</button><a class="button primary link-button" href="/evaluation.html">Review evaluation <span aria-hidden="true">→</span></a></div></section>
       <aside class="card route-card"><div class="card-heading"><div><span class="step">02</span><h2>Staff review</h2></div><span class="micro">SIMULATED</span></div><p class="helper">Use the result list to mark candidates and add review notes. Routing below is only a demo interaction.</p><div class="route-panel"><h3>Route a candidate</h3><div class="route-controls"><label for="route-record">Candidate</label><select id="route-record"></select><label for="route-owner">Synthetic coordinator</label><select id="route-owner"><option>Transportation Records Coordinator</option><option>Public Works Records Coordinator</option><option>Utilities Records Coordinator</option><option>Clerk Records Coordinator</option></select><button id="route-button" class="button secondary">Record demo route</button></div><div id="route-status" class="feedback-status" role="status" aria-live="polite"></div></div><p class="metric-caveat">No person is notified or assigned. This records a synthetic event in this browser session.</p><a class="refine-link" href="/">← Refine request and search plan</a></aside>
     </div>
-    <footer>All records shown are synthetic examples · no City repositories are connected</footer>
+    </div>
+<div class="real-only">
+<section class="intro compact-intro"><div><p class="eyebrow">REAL DATA · SEARCH RESULTS</p><h1>Candidate records<span class="title-period">.</span></h1><p class="lede" id="r-request">Open a search from Request &amp; Plan or Search History.</p><div class="chip-row" id="r-plan"></div></div><div class="guardrail"><span class="shield">✓</span><div><b>Staff stay in control</b><p>Rankings help find records faster. Staff decide responsiveness and disclosure.</p></div></div></section>
+<div id="signin-gate" class="page-content" hidden></div>
+<div class="page-content results-layout needs-auth">
+<section class="card summary-card" id="summary-card" hidden><div class="card-heading"><div><span class="step">AI</span><h2>Evidence summary</h2></div><span class="micro" id="summary-meta"></span></div><div id="summary-body"></div></section>
+<section class="card results-card"><div class="card-heading"><div><span class="step">01</span><h2>Ranked records</h2></div><span class="micro" id="r-count"></span></div>
+<div class="filter-bar" id="r-filters"></div>
+<div id="r-list" aria-live="polite"></div>
+<div id="r-pager"></div>
+<p class="review-note">Relevance is relative to the best match in this search, not a probability. “Exact” means a search term appears in the record; “related wording” means only an alternative term matched; “similar meaning” means only the semantic index matched.</p>
+</section>
+</div>
+</div>
+<footer><span class="demo-only">All records shown are synthetic examples · no City repositories are connected</span><span class="real-only">Public Records AI Search · staff workspace · results come from your connected sources</span></footer>
   </main>
-  <script src="app.js"></script>
+  <script src="app.js"></script><script type="module" src="/client/pages/results.js"></script>
 </body>
 </html>

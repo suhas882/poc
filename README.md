@@ -1,4 +1,64 @@
-# Public Records AI Search POC
+# Public Records AI Search
+
+A staff workspace for public-records requests. Staff describe a request in plain language. Claude drafts a search plan, which staff review and confirm. The app then searches every source the person is allowed to see: Gmail, uploaded documents, imported message exports, and read-only databases. It ranks candidates with hybrid keyword and semantic retrieval, explains each match, and lets staff record relevance decisions. An optional summary cites only the retrieved records. Every action is audited.
+
+The original synthetic Round 2 demo is still here, unchanged, as **Demo mode**. **Real data mode** needs sign-in and works only with sources someone has connected. The two never mix.
+
+## Quick start
+
+```powershell
+npm install
+npm run build
+node server.js          # http://localhost:8765
+```
+
+- Demo mode works straight away.
+- For real data, open `/login.html` on the same computer to create the first administrator, then go to **Connected Sources**.
+- Copy `.env.example` to `.env` to switch on Claude (`ANTHROPIC_API_KEY`), Gmail (`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`), semantic search (`EMBEDDINGS_*`) and production encryption (`CREDENTIAL_ENCRYPTION_KEY`).
+- Requires Node.js 22.13 or newer.
+
+```powershell
+npm test                # 25 integration and unit tests + the original demo smoke tests
+```
+
+## Documentation
+
+- [docs/SETUP.md](docs/SETUP.md): installation, configuration, Claude, embeddings, Gmail OAuth, databases, OCR, deployment, troubleshooting
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): diagram, search pipeline, data model, security model, threat model
+- [docs/API.md](docs/API.md): every endpoint and the search-plan format
+- [docs/STATUS.md](docs/STATUS.md): what is tested, what awaits credentials, what is partial or not feasible
+
+## Pages
+
+| Page | Demo mode | Real data mode |
+| --- | --- | --- |
+| Request & Plan | The 18 invented scenarios (unchanged) | Plain-language request → Claude (or local rules) plan → edit → confirm |
+| Search Results | The synthetic candidate desk | Ranked records with match type, reasons, snippets, preview, source links, decisions, filters, grouping, export, Claude summary |
+| Connected Sources | n/a | Gmail, uploads, message imports, PostgreSQL / MySQL / SQLite; status, scopes, sharing, sync history, disconnect |
+| Search History | n/a | Your searches (or everyone's, for auditors and admins) |
+| Evaluation | Synthetic benchmark and label worksheet (unchanged) | Precision and pooled recall from staff decisions, false positives, execution metrics |
+| Audit Logs | n/a | Filterable, exportable activity trail |
+| Settings | n/a | Account, defaults, configuration status, Claude usage and cost, users and roles, retention |
+
+## Layout
+
+```
+server.js                 entry point (Node 22.13+ check) → server/index.mjs
+server/                   config, db + migrations, http, auth, security, audit, retention
+  ai/                     provider abstraction, Anthropic provider, planner, summarizer
+  connectors/             gmail, database, synthetic
+  ingest/                 file extraction, message parsers, pipeline (chunk, dedupe, index, embed)
+  search/                 hybrid retrieval, embeddings providers
+  routes/                 sources, search, admin
+client/                   strict TypeScript for real-data pages (compiled .js committed)
+app.ts → app.js           synthetic demo engine (unchanged behavior)
+tests/                    node:test suites with mock Anthropic/Google servers and PGlite
+scripts/create-admin.mjs  create users from the command line
+```
+
+---
+
+## Round 2 synthetic demo (original POC notes)
 
 ## Current implementation
 

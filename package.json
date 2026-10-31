@@ -1,13 +1,30 @@
 {
-  "name": "bellevue-public-records-search-poc",
-  "version": "1.0.0",
+  "name": "public-records-ai-search",
+  "version": "2.0.0",
   "private": true,
   "scripts": {
-    "build": "tsc -p tsconfig.json && node --check app.js && node --check server.js",
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.client.json && node --check app.js && node --check server.js",
     "start": "node server.js",
-    "dev": "npm run build && node server.js"
+    "dev": "npm run build && node server.js",
+    "test": "node --test tests/*.test.mjs && node smoke-test.js && node label-workflow-test.js",
+    "test:demo": "node smoke-test.js && node label-workflow-test.js",
+    "create-admin": "node scripts/create-admin.mjs",
+    "benchmark": "node benchmark.js"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.10",
     "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "pdfjs-dist": "6.4.299"
+  },
+  "optionalDependencies": {
+    "mysql2": "3.24.6",
+    "pg": "8.23.1",
+    "tesseract.js": "7.0.0"
+  },
+  "description": "Public Records AI Search: staff search across connected sources with Claude-assisted planning, hybrid retrieval and audit logging. Includes the synthetic Round 2 demo.",
+  "engines": {
+    "node": ">=22.13"
   }
 }
