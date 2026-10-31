@@ -9,7 +9,7 @@ import { deleteRecord, deleteSourceRecords, embedPending, recordView, upsertReco
 import { extractFile, SUPPORTED } from '../ingest/extract.mjs';
 import { groupConversations, parseMessages } from '../ingest/messages.mjs';
 import { checkMapping, DIALECTS } from '../connectors/database.mjs';
-import { GMAIL_SCOPE } from '../connectors/gmail.mjs';
+import { GMAIL_SCOPE, GmailApiError } from '../connectors/gmail.mjs';
 import { isPhoneLink } from '../connectors/phonelink.mjs';
 import { activePack, switches } from '../packs.mjs';
 
@@ -88,9 +88,19 @@ export function startSync(s, source, user, trigger, { full = false } = {}) {
   if (s.running.has(source.id)) throw new HttpError(409, 'sync_running', 'This source is already synchronizing.');
   const jobId = crypto.randomUUID();
   s.db.run("INSERT INTO sync_jobs (id, tenant_id, source_id, trigger, status, started_at) VALUES (?, ?, ?, ?, 'running', ?)", jobId, source.tenant_id, source.id, trigger, nowIso());
+  /** @type {any} filled in by the Gmail connector as it goes, so failures still show how far the run got */
+  const diag = {};
+  const saveDiag = (err) => {
+    const d = err instanceof GmailApiError ? err.diag : null;
+    const c = diag.counts || {};
+    s.db.run(`UPDATE sync_jobs SET added = ?, updated = ?, deleted = ?, skipped = ?, api_status = ?, error_code = ?, error_reason = ?, error_endpoint = ?, provider_message = ?,
+      listed = ?, attempted = ?, fetched = ?, api_calls = ?, rate_limit_waits = ? WHERE id = ?`,
+    c.added ?? 0, c.updated ?? 0, c.deleted ?? 0, c.skipped ?? 0, d?.httpStatus ?? null, err instanceof HttpError ? err.code : err ? 'error' : null, d?.reason ?? null, d?.endpoint ?? null, d?.googleMessage ?? null,
+    diag.listed ?? null, diag.attempted ?? null, diag.fetched ?? null, diag.apiCalls ?? null, diag.rateLimitWaits ?? null, jobId);
+  };
   const promise = (async () => {
     try {
-      const counts = source.type === 'gmail' ? await s.gmail.sync(source, { full })
+      const counts = source.type === 'gmail' ? await s.gmail.sync(source, { full, diag })
         : source.type === 'database' ? await s.database.sync(source)
         : isPhoneLink(source) ? s.phonelink.sync(source)
         : (() => { throw new HttpError(400, 'not_syncable', 'This source is updated by uploading files, not by synchronizing.'); })();
@@ -98,12 +108,15 @@ export function startSync(s, source, user, trigger, { full = false } = {}) {
       try { embedded = await embedPending(s.db, s.embedder, source.tenant_id); } catch (err) { embedError = err instanceof Error ? err.message : String(err); }
       s.db.run("UPDATE sync_jobs SET status = 'succeeded', finished_at = ?, added = ?, updated = ?, deleted = ?, skipped = ?, error = ? WHERE id = ?",
         nowIso(), counts.added, counts.updated, counts.deleted, counts.skipped, counts.truncated ? 'Stopped at the per-sync limit; run it again to continue.' : embedError ? `Indexed for keyword search; semantic indexing failed: ${embedError}` : null, jobId);
+      if (source.type === 'gmail') saveDiag(null);
       s.db.run("UPDATE sources SET status = 'connected', last_sync_at = ?, last_sync_status = 'succeeded', last_error = NULL, updated_at = ? WHERE id = ?", nowIso(), nowIso(), source.id);
       s.audit.write({ tenantId: source.tenant_id, userId: user?.id, action: 'source.synced', targetType: 'source', targetId: source.id, details: { ...counts, embedded, trigger } });
     } catch (err) {
       const message = err instanceof HttpError ? err.message : 'The synchronization failed unexpectedly. Details are in the server log.';
       if (!(err instanceof HttpError)) s.log('[sync] failed:', err);
+      if (err instanceof GmailApiError) s.log(`[gmail] sync failed: ${err.diag.endpoint} HTTP ${err.diag.httpStatus} ${err.diag.reason || ''} after ${diag.apiCalls ?? 0} calls, ${diag.fetched ?? 0} messages fetched`);
       s.db.run("UPDATE sync_jobs SET status = 'failed', finished_at = ?, error = ? WHERE id = ?", nowIso(), message, jobId);
+      saveDiag(err);
       s.db.run("UPDATE sources SET status = 'needs_attention', last_sync_at = ?, last_sync_status = 'failed', last_error = ?, updated_at = ? WHERE id = ?", nowIso(), message, nowIso(), source.id);
       s.audit.write({ tenantId: source.tenant_id, userId: user?.id, action: 'source.synced', targetType: 'source', targetId: source.id, outcome: 'failure', details: { error: message, trigger } });
     } finally {
@@ -153,7 +166,10 @@ export function registerSourceRoutes(router, s) {
   router.on('GET', '/api/sources/:id/jobs', ({ res, user, params }) => {
     requirePermission(user, 'sources.read');
     if (!visibleSources(db, user).some(r => r.id === params.id)) throw new HttpError(404, 'not_found', 'That source does not exist.');
-    ok(res, db.all('SELECT id, trigger, status, started_at AS startedAt, finished_at AS finishedAt, added, updated, deleted, skipped, error FROM sync_jobs WHERE source_id = ? ORDER BY started_at DESC LIMIT 20', params.id));
+    ok(res, db.all(`SELECT id, trigger, status, started_at AS startedAt, finished_at AS finishedAt, added, updated, deleted, skipped, error,
+      api_status AS apiStatus, error_code AS errorCode, error_reason AS errorReason, error_endpoint AS errorEndpoint, provider_message AS providerMessage,
+      listed, attempted, fetched, api_calls AS apiCalls, rate_limit_waits AS rateLimitWaits
+      FROM sync_jobs WHERE source_id = ? ORDER BY started_at DESC LIMIT 20`, params.id));
   });
 
   router.on('PATCH', '/api/sources/:id', async ({ req, res, user, params, ipHash }) => {

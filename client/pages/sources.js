@@ -346,10 +346,21 @@ async function showRecords(s, page = 1) {
             } } }, 'Delete')))))) : empty('Nothing here yet', 'Upload files to add them.'), res.meta && res.meta.total > 25 ? h('p', { class: 'helper' }, `Showing ${res.data.length} of ${res.meta.total}.`) : null);
     const dlg = openDialog(s.name, body, { wide: true, onClose: () => loadSources() });
 }
+/** Messages fetched of those attempted, e.g. "158 of 159 (519 listed)". Blank for sources that don't report it. */
+function jobMessages(j) {
+    if (j.attempted == null && j.listed == null)
+        return '';
+    return `${j.fetched ?? 0} of ${j.attempted ?? 0}${j.listed != null ? ` (${j.listed} listed)` : ''}`;
+}
+function jobDetails(j) {
+    const api = [j.errorEndpoint, j.apiStatus != null ? `HTTP ${j.apiStatus}` : null, j.errorReason].filter(Boolean).join(' · ');
+    const calls = j.apiCalls != null ? `${j.apiCalls} API calls${j.rateLimitWaits ? `, waited for the rate limit ${j.rateLimitWaits}×` : ''}` : '';
+    return h('div', null, j.error ? h('div', null, j.error) : null, api ? h('div', { class: 'hint' }, `Google API: ${api}`) : null, j.providerMessage ? h('div', { class: 'hint' }, `Google said: ${j.providerMessage}`) : null, calls ? h('div', { class: 'hint' }, calls) : null);
+}
 async function showJobs(s) {
     const res = await get(`/api/sources/${s.id}/jobs`).catch(() => null);
     openDialog(`Sync history: ${s.name}`, res?.data.length
-        ? h('table', { class: 'data-table' }, h('thead', null, h('tr', null, ...['Started', 'Trigger', 'Result', 'Added', 'Updated', 'Removed', 'Details'].map(x => h('th', null, x)))), h('tbody', null, res.data.map(j => h('tr', null, h('td', null, fmtDate(j.startedAt, true)), h('td', null, j.trigger), h('td', null, h('span', { class: `status-pill st-${j.status === 'succeeded' ? 'connected' : j.status === 'running' ? 'syncing' : 'needs_attention'}` }, j.status)), h('td', null, j.added), h('td', null, j.updated), h('td', null, j.deleted), h('td', null, j.error || '')))))
+        ? h('table', { class: 'data-table' }, h('thead', null, h('tr', null, ...['Started', 'Trigger', 'Result', 'Messages fetched', 'Added', 'Updated', 'Removed', 'Details'].map(x => h('th', null, x)))), h('tbody', null, res.data.map(j => h('tr', null, h('td', null, fmtDate(j.startedAt, true)), h('td', null, j.trigger), h('td', null, h('span', { class: `status-pill st-${j.status === 'succeeded' ? 'connected' : j.status === 'running' ? 'syncing' : 'needs_attention'}` }, j.status)), h('td', null, jobMessages(j)), h('td', null, j.added), h('td', null, j.updated), h('td', null, j.deleted), h('td', null, jobDetails(j))))))
         : empty('No synchronizations yet', 'Use Sync now to start one.'), { wide: true });
 }
 function editSharing(s) {

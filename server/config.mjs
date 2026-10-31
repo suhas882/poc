@@ -111,6 +111,10 @@ export function getConfig(env = process.env) {
     }),
     gmail: Object.freeze({
       maxMessagesPerSync: int(env.GMAIL_MAX_MESSAGES_PER_SYNC, 500),
+      maxListedPerSync: int(env.GMAIL_MAX_LISTED_PER_SYNC, 20000),
+      // Gmail's per-minute quota: how often to wait and retry, and the longest single wait.
+      rateLimitRetries: int(env.GMAIL_RATE_LIMIT_RETRIES, 5),
+      rateLimitMaxWaitMs: int(env.GMAIL_RATE_LIMIT_MAX_WAIT_MS, 65_000),
       defaultQuery: env.GMAIL_DEFAULT_QUERY ?? 'newer_than:2y',
       indexAttachments: bool(env.GMAIL_INDEX_ATTACHMENTS, true),
       maxAttachmentBytes: int(env.GMAIL_MAX_ATTACHMENT_BYTES, 10 * 1024 * 1024)
