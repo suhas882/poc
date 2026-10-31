@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
-import { fakeServer, startApp, waitForSync } from './helpers.mjs';
+import { fakeServer, startApp, waitForSync, searchReq } from './helpers.mjs';
 import { parseGmailMessage } from '../server/connectors/gmail.mjs';
 
 const SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
@@ -119,10 +119,9 @@ test('Gmail: OAuth with PKCE, encrypted tokens, sync, attachments, incremental h
   let jobs = (await c.get(`/api/sources/${sourceId}/jobs`)).data.data;
   assert.equal(jobs[0].status, 'succeeded');
 
-  const plan = await c.post('/api/searches/plan', { requestText: 'emails about the Cedar Avenue lane closure', mode: 'real' });
-  const sid = plan.data.data.searchId;
-  await c.post(`/api/searches/${sid}/run`, { plan: { ...plan.data.data.plan, recordTypes: [] }, confirmed: true });
-  let res = (await c.get(`/api/searches/${sid}/results?pageSize=50`)).data;
+  const sr = await searchReq(c, 'emails about the Cedar Avenue lane closure', { edits: { recordTypes: [] } });
+  const sid = sr.id;
+  let res = { data: sr.results, meta: sr.meta };
   const email = res.data.find(x => x.record.title === 'Cedar Avenue lane closure schedule');
   assert(email, JSON.stringify(res.data.map(x => x.record.title)));
   assert.equal(email.record.sourceType, 'gmail');
@@ -132,8 +131,8 @@ test('Gmail: OAuth with PKCE, encrypted tokens, sync, attachments, incremental h
   assert.equal(email.record.createdAt, '2025-01-15T17:00:00.000Z');
   assert(res.data.some(x => /detour\.txt \(attachment/.test(x.record.title)));
   assert(!res.data.some(x => x.record.title === 'You won'), 'spam is not indexed');
-  const grouped = (await c.get(`/api/searches/${sid}/results?group=1`)).data;
-  assert(grouped.meta.total < res.meta.total, 'messages in one thread are grouped');
+  const keys = res.data.map(x => x.groupKey).filter(Boolean);
+  assert(keys.length > new Set(keys).size, 'messages in one thread are grouped');
   const full = (await c.get(`/api/records/${email.record.id}`)).data.data;
   assert.match(full.content, /water main/);
   assert(full.related.length >= 1, 'thread members are linked');
@@ -183,7 +182,7 @@ test('Gmail: OAuth with PKCE, encrypted tokens, sync, attachments, incremental h
   assert.equal(env.app.db.get('SELECT COUNT(*) AS n FROM records WHERE source_id = ?', sourceId).n, 0);
   assert.equal(env.app.db.get('SELECT COUNT(*) AS n FROM source_credentials').n, 0);
   assert.equal(env.app.db.get('SELECT COUNT(*) AS n FROM chunk_fts WHERE rowid NOT IN (SELECT id FROM chunks)').n, 0, 'no orphaned index rows');
-  res = (await c.get(`/api/searches/${sid}/results`)).data;
+  res = (await c.get(`/api/requests/${sid}/results`)).data;
   assert.equal(res.meta.total, 0, 'past result lists no longer expose deleted records');
   const actions = (await c.get('/api/audit?pageSize=200')).data.data.map(a => a.action);
   for (const a of ['source.oauth_started', 'source.connected', 'source.synced', 'source.disconnected']) assert(actions.includes(a), a);

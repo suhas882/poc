@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { startApp, waitForSync } from './helpers.mjs';
+import { startApp, waitForSync, searchReq } from './helpers.mjs';
 import { buildSelect, makeMysqlSession, makePgSession, quoteIdent } from '../server/connectors/database.mjs';
 
 const { DatabaseSync } = await import('node:sqlite');
@@ -52,9 +52,7 @@ test('SQLite connector: read-only sync, schema checks, tenant column, deletion p
   assert.equal(src.status, 'connected', src.lastError);
   assert.equal(src.recordCount, 2, 'rows for another tenant value are never copied');
 
-  const p = await c.post('/api/searches/plan', { requestText: 'permits for the Cedar Avenue lane closure', mode: 'real' });
-  await c.post(`/api/searches/${p.data.data.searchId}/run`, { plan: p.data.data.plan, confirmed: true });
-  const res = (await c.get(`/api/searches/${p.data.data.searchId}/results`)).data.data;
+  const res = (await searchReq(c, 'permits for the Cedar Avenue lane closure')).results;
   const permit = res.find(x => x.record.title === 'Street use permit P-1');
   assert(permit);
   assert.equal(permit.record.department, 'Transportation');
@@ -116,9 +114,7 @@ test('PostgreSQL connector against real Postgres (PGlite): read-only transaction
   assert(cred && !cred.ciphertext.includes('pw-not-stored'));
   assert.equal(env.app.services.vault.open(cred.ciphertext).password, 'pw-not-stored-in-clear');
 
-  const p = await c.post('/api/searches/plan', { requestText: 'Cedar Avenue lane closure permits', mode: 'real' });
-  await c.post(`/api/searches/${p.data.data.searchId}/run`, { plan: p.data.data.plan, confirmed: true });
-  const res = (await c.get(`/api/searches/${p.data.data.searchId}/results`)).data.data;
+  const res = (await searchReq(c, 'Cedar Avenue lane closure permits')).results;
   assert.equal(res[0].record.title, 'Right-of-way permit 88');
   assert.equal(res[0].record.createdAt.slice(0, 10), '2025-01-20');
 });

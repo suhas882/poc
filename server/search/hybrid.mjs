@@ -23,10 +23,14 @@ export function accessFilter(user, mode) {
   return {
     sql: `r.tenant_id = ? AND s.tenant_id = ? AND s.status != 'disconnected' AND r.is_synthetic = ?
       AND ((s.visibility = 'owner' AND s.owner_user_id = ?)
-        OR (s.visibility = 'roles' AND (s.allowed_roles = '[]' OR EXISTS (SELECT 1 FROM json_each(s.allowed_roles) WHERE value = ?))))
+        OR (s.visibility = 'roles' AND COALESCE(json_extract(s.config, '$.provider'), '') NOT LIKE 'phonelink%'
+          AND (s.allowed_roles = '[]' OR EXISTS (SELECT 1 FROM json_each(s.allowed_roles) WHERE value = ?)))
+        -- Phone texts: the employee who owns them, or anyone once the employee sent that item as city business. Sharing never widens this.
+        OR (COALESCE(json_extract(s.config, '$.provider'), '') LIKE 'phonelink%'
+          AND (s.owner_user_id = ? OR EXISTS (SELECT 1 FROM text_reviews tr WHERE tr.record_id = r.id AND tr.decision = 'city' AND tr.sent_at IS NOT NULL))))
       AND (json_extract(r.access_permissions, '$.roles') IS NULL OR EXISTS (SELECT 1 FROM json_each(r.access_permissions, '$.roles') WHERE value = ?))
       AND (json_extract(r.access_permissions, '$.users') IS NULL OR EXISTS (SELECT 1 FROM json_each(r.access_permissions, '$.users') WHERE value = ?))`,
-    params: [user.tenantId, user.tenantId, mode === 'demo' ? 1 : 0, user.id, user.role, user.role, user.id]
+    params: [user.tenantId, user.tenantId, mode === 'demo' ? 1 : 0, user.id, user.role, user.id, user.role, user.id]
   };
 }
 
@@ -38,10 +42,26 @@ function planFilter(plan) {
   if (plan.departments?.length && plan.filterDepartments) { parts.push(`(${plan.departments.map(() => 'r.department LIKE ?').join(' OR ')})`); params.push(...plan.departments.map(d => `%${d}%`)); }
   if (plan.recordTypes?.length && plan.filterRecordTypes) { parts.push(`(${plan.recordTypes.map(() => 'r.document_type LIKE ?').join(' OR ')})`); params.push(...plan.recordTypes.map(t => `%${t}%`)); }
   if (plan.sourceIds?.length) { parts.push(`s.id IN (${plan.sourceIds.map(() => '?').join(',')})`); params.push(...plan.sourceIds); }
+  // Texts from a phone reach a search only after the employee marked them as city business and sent them for it.
+  if (plan.phoneSearchId !== undefined) {
+    parts.push(`(COALESCE(json_extract(s.config, '$.provider'), '') NOT LIKE 'phonelink%' OR EXISTS (SELECT 1 FROM text_reviews tr WHERE tr.search_id = ? AND tr.record_id = r.id AND tr.decision = 'city' AND tr.sent_at IS NOT NULL))`);
+    params.push(plan.phoneSearchId);
+  }
   return { sql: parts.length ? ' AND ' + parts.join(' AND ') : '', params };
 }
 
 /** Build a safe FTS5 MATCH expression: every term becomes a quoted phrase, OR-ed together. */
+/** Related wording from the city pack's concept groups: a local "meaning" match that never leaves the server. */
+export function conceptTerms(terms, concepts = []) {
+  const lower = terms.map(t => t.toLowerCase());
+  const out = new Map();
+  for (const group of concepts) {
+    const hit = group.find(c => lower.some(t => t === c || t.includes(c) || c.includes(t)));
+    if (hit) for (const c of group) if (!lower.includes(c)) out.set(c, hit);
+  }
+  return out; // related term -> the plan term it relates to
+}
+
 export function ftsQuery(terms) {
   const cleaned = [...new Set(terms.map(t => (String(t).toLowerCase().match(/[\p{L}\p{N}]+/gu) || []).join(' ')).filter(t => t.length > 1))];
   return cleaned.length ? cleaned.map(t => `"${t}"`).join(' OR ') : '';
@@ -68,14 +88,16 @@ const jaccard = (a, b) => { if (!a.size || !b.size) return 0; let n = 0; for (co
 /**
  * @param {import('../db.mjs').Database} db
  * @param {{user: {id: string, tenantId: string, role: string}, mode: 'demo' | 'real', plan: any,
- *   embedder?: {model: string, embed: (t: string[], k: 'query') => Promise<number[][]>} | null, limit?: number, requestText?: string}} args
+ *   embedder?: {model: string, embed: (t: string[], k: 'query') => Promise<number[][]>} | null, limit?: number, requestText?: string,
+ *   concepts?: string[][], keywordOnly?: boolean, arguablyBelow?: number}} args
  */
-export async function hybridSearch(db, { user, mode, plan, embedder = null, limit = 200, requestText = '' }) {
+export async function hybridSearch(db, { user, mode, plan, embedder = null, limit = 200, requestText = '', concepts = [], keywordOnly = false, arguablyBelow = 40 }) {
   const started = performance.now();
   const acl = accessFilter(user, mode);
   const pf = planFilter(plan);
   const primaryTerms = [...plan.keywords, ...plan.phrases, ...plan.people, ...plan.organizations, ...plan.locations];
-  const alternateTerms = plan.alternateTerms.filter(t => !primaryTerms.some(p => p.toLowerCase() === t.toLowerCase()));
+  const related = keywordOnly ? new Map() : conceptTerms([...primaryTerms, ...plan.alternateTerms], concepts);
+  const alternateTerms = keywordOnly ? [] : [...new Set([...plan.alternateTerms, ...related.keys()])].filter(t => !primaryTerms.some(p => p.toLowerCase() === t.toLowerCase()));
   /** @type {Map<string, {primary?: number, alternate?: number, semantic?: number, similarity?: number, bestChunk?: number, bm25?: number}>} */
   const ranks = new Map();
   const note = (recordId, list, rank, extra = {}) => {
@@ -102,7 +124,7 @@ export async function hybridSearch(db, { user, mode, plan, embedder = null, limi
   const alternateHits = fts(alternateTerms, 'alternate');
 
   let semanticHits = 0, semanticStatus = embedder ? 'on' : 'off';
-  if (embedder) {
+  if (embedder && !keywordOnly) {
     try {
       const queryText = [requestText, plan.summary, ...primaryTerms, ...alternateTerms].filter(Boolean).join('\n').slice(0, 4000);
       const [qv] = await embedder.embed([queryText], 'query');
@@ -188,22 +210,31 @@ export async function hybridSearch(db, { user, mode, plan, embedder = null, limi
     const reasons = [];
     if (item.exact.length) reasons.push(`Contains ${item.exact.slice(0, 4).map(t => `“${t}”`).join(', ')}`);
     if (item.inTitle.length) reasons.push('A search term is in the title');
-    if (item.alt.length) reasons.push(`Uses related wording: ${item.alt.slice(0, 3).map(t => `“${t}”`).join(', ')}`);
+    const viaMeaning = item.alt.filter(t => related.has(t));
+    if (viaMeaning.length) reasons.push(`Matches “${related.get(viaMeaning[0])}” by meaning (uses ${viaMeaning.slice(0, 3).map(t => `“${t}”`).join(', ')})`);
+    const plainAlt = item.alt.filter(t => !related.has(t));
+    if (plainAlt.length) reasons.push(`Uses related wording: ${plainAlt.slice(0, 3).map(t => `“${t}”`).join(', ')}`);
     if (e.similarity !== undefined) reasons.push(`Similar in meaning (similarity ${e.similarity.toFixed(2)})`);
     if (item.peopleHit.length) reasons.push(`Involves ${item.peopleHit.join(', ')}`);
     if (item.deptHit) reasons.push(`From ${r.department}, a department in the plan`);
     if (item.typeHit) reasons.push(`Is a ${String(r.document_type).toLowerCase()}, a record type in the plan`);
     if ((plan.dateFrom || plan.dateTo) && r.created_at) reasons.push(`Dated ${r.created_at.slice(0, 10)}, inside the requested period`);
+    const passageTerms = [...item.exact, ...item.alt];
+    const passage = snippetAround(chunk?.text || r.content, passageTerms, 240);
+    // Every reason must point at a passage in the record; a result without one is dropped.
+    if (!passage || !reasons.length) return null;
+    const why = `${reasons[0]}${reasons[1] ? `. ${reasons[1]}` : ''}.`;
     return {
-      recordId: r.id, rank: i + 1, score: item.score, groupKey: groupOf.get(r.id) || null,
+      recordId: r.id, rank: 0, score: item.score, groupKey: groupOf.get(r.id) || null,
       match: {
-        relevance, band: relevance >= 70 ? 'strong' : relevance >= 40 ? 'possible' : 'weak', matchType: item.matchType,
+        relevance, band: relevance >= 70 ? 'strong' : relevance >= arguablyBelow ? 'possible' : 'weak', arguable: relevance < arguablyBelow,
+        matchType: item.exact.length ? 'exact' : viaMeaning.length ? 'meaning' : item.alt.length ? 'alternate' : 'semantic',
         exactTerms: item.exact, alternateTerms: item.alt, similarity: e.similarity ?? null,
         signals: { primaryRank: e.primary ?? null, alternateRank: e.alternate ?? null, semanticRank: e.semantic ?? null },
-        reasons, snippet: snippetAround(chunk?.text || r.content, [...item.exact, ...item.alt])
+        why, reasons, snippet: passage, passageRef: { recordId: r.id, chunkId: e.bestChunk ?? null }
       }
     };
-  });
+  }).filter(Boolean).map((x, i) => ({ ...x, rank: i + 1 }));
   return { results, stats: { primaryHits, alternateHits, semanticHits, semanticStatus, durationMs: Math.round(performance.now() - started), excluded } };
 }
 

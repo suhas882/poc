@@ -41,6 +41,8 @@ if not exist "node_modules\pdfjs-dist" (
 )
 
 if "%PORT%"=="" set PORT=8765
+rem This PC may connect real sources. The hosted demo leaves REAL_SOURCES unset, so it stays Tier 0.
+if "%REAL_SOURCES%"=="" set REAL_SOURCES=true
 echo.
 echo Starting the server on http://localhost:%PORT%/
 echo Keep this window open while you use the website. Close it (or press Ctrl+C) to stop.

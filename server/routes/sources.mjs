@@ -11,6 +11,7 @@ import { groupConversations, parseMessages } from '../ingest/messages.mjs';
 import { checkMapping, DIALECTS } from '../connectors/database.mjs';
 import { GMAIL_SCOPE } from '../connectors/gmail.mjs';
 import { isPhoneLink } from '../connectors/phonelink.mjs';
+import { activePack, switches } from '../packs.mjs';
 
 const isLoopback = (ip) => ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
 import { accessFilter } from '../search/hybrid.mjs';
@@ -19,12 +20,22 @@ import { ROOT } from '../config.mjs';
 const hasModule = (m) => fs.existsSync(path.join(ROOT, 'node_modules', m));
 
 /** What can be connected, and honestly whether it works on this server. */
-export function connectorCatalog(s) {
+export function connectorCatalog(s, user) {
+  const tier0 = !s.config.realSources || Boolean(s.db.get('SELECT is_demo FROM tenants WHERE id = ?', user.tenantId)?.is_demo);
+  const pack = activePack(s.db, user.tenantId);
+  const sw = switches(s.db, user.tenantId, s.config);
+  const publicDocs = { type: 'public', name: 'Public documents', description: 'Openly published documents only (Tier 0). Each file needs its web address, retrieval date and a terms-of-use check.', permissions: ['Only the files you add, with their provenance'], status: 'available' };
+  const stubs = pack.sources.map(st => ({ type: 'stub', key: st.key, name: st.name, description: `Would read: ${st.sees}. Read-only.`, permissions: [], status: 'not_connected', note: st.note }));
+  if (tier0) return [publicDocs, ...stubs];
+  return [...fullCatalog(s).filter(c => !['google_drive', 'onedrive', 'sharepoint', 'outlook'].includes(c.type)).filter(c => c.type !== 'phonelink' || sw.phoneLink).map(c => c.type === 'phonelink' ? { ...c, experimental: true } : c), publicDocs, ...stubs];
+}
+
+function fullCatalog(s) {
   const st = (ready, reason) => ready ? { status: 'available' } : { status: 'needs_configuration', reason };
   return [
     { type: 'gmail', name: 'Gmail', description: 'Read-only access to one mailbox through Google sign-in. Attachments in supported formats are indexed too.', permissions: ['Read email messages and attachments (gmail.readonly)'], ...st(s.gmail.configured && s.vault, !s.gmail.configured ? 'An administrator needs to add Google OAuth credentials (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET).' : 'Credential encryption key is missing.') },
     { type: 'uploads', name: 'Document uploads', description: 'Upload PDF, Word, Excel, CSV, text files and images (OCR). On a phone, use the file picker to choose exported files.', permissions: ['Only the files you choose'], status: 'available' },
-    { type: 'phonelink', name: 'Android texts (Phone Link)', description: 'Reads the texts your Android phone already syncs to Windows Phone Link on this PC, with no export. New texts are picked up automatically.', permissions: ['Read Phone Link’s copy of your texts, read-only', 'Nothing is sent from or changed on your phone'], status: 'available', note: s.phonelink.available ? undefined : 'This app does not seem to be running on Windows right now. Use Check this PC to see why.' },
+    { type: 'phonelink', name: 'Android texts (Phone Link)', description: 'Reads the texts your Android phone already syncs to Windows Phone Link on this PC, with no export. New texts are picked up automatically.', permissions: ['Read Phone Link’s copy of your texts, read-only', 'Nothing is sent from or changed on your phone'], status: 'available', local: s.phonelink.available, note: s.phonelink.available ? 'On a hosted server (Render, AWS), use the PC sync helper instead.' : 'This server is not on your PC, so it uses the PC sync helper: a small program on your Windows PC that sends new texts here.' },
     { type: 'messages', name: 'Message imports', description: 'Import message exports you create yourself: Android SMS Backup & Restore XML, WhatsApp “Export chat” text, or CSV.', permissions: ['Only the export files you choose'], status: 'available', note: 'For Android texts without exporting, use Android texts (Phone Link) above. WhatsApp and iPhone messages still need an export.' },
     { type: 'database', driver: 'postgres', name: 'PostgreSQL', description: 'Read-only, allowlisted tables and columns.', permissions: ['SELECT on allowlisted tables'], ...st(hasModule('pg'), 'The PostgreSQL driver is not installed (npm install pg).') },
     { type: 'database', driver: 'mysql', name: 'MySQL', description: 'Read-only, allowlisted tables and columns.', permissions: ['SELECT on allowlisted tables'], ...st(hasModule('mysql2'), 'The MySQL driver is not installed (npm install mysql2).') },
@@ -50,6 +61,7 @@ function sourceView(row, user, running) {
   const cfg = parseJson(row.config, {});
   const repositories = row.type === 'gmail' ? [{ name: cfg.query ? `Messages matching “${cfg.query}”` : 'All mail except spam and trash', kind: 'gmail_query' }]
     : isPhoneLink(row) ? [{ name: 'Texts synced by Phone Link on this PC', kind: 'phonelink' }]
+    : cfg.provider === 'phonelink-agent' ? [{ name: 'Texts sent by the PC sync helper', kind: 'phonelink-agent' }]
     : row.type === 'database' ? (cfg.tables || []).map(t => ({ name: t.name, kind: 'table', columns: [t.idColumn, t.titleColumn, ...(t.contentColumns || [])] }))
     : [];
   return {
@@ -59,7 +71,7 @@ function sourceView(row, user, running) {
     visibility: row.visibility, allowedRoles: parseJson(row.allowed_roles, []), scopes: parseJson(row.scopes, []),
     driver: cfg.driver ?? null, provider: cfg.provider ?? null, repositories, recordCount: row.record_count, duplicateCount: row.duplicate_count,
     lastSyncAt: row.last_sync_at, lastSyncStatus: row.last_sync_status, lastError: row.last_error, createdAt: row.created_at,
-    isSynthetic: row.type === 'synthetic'
+    isSynthetic: row.type === 'synthetic', publicDocs: cfg.publicDocs === 1, experimental: String(cfg.provider || '').startsWith('phonelink'), readOnly: true
   };
 }
 
@@ -121,11 +133,21 @@ const roleList = { type: 'array', items: { type: 'string', values: ROLES }, max:
 export function registerSourceRoutes(router, s) {
   const { db, audit, config } = s;
 
-  router.on('GET', '/api/connectors', ({ res, user }) => { requirePermission(user, 'sources.read'); ok(res, connectorCatalog(s)); });
+  router.on('GET', '/api/connectors', ({ res, user }) => { requirePermission(user, 'sources.read'); ok(res, connectorCatalog(s, user)); });
+
+  /** Real sources are refused unless the server has REAL_SOURCES=true and this is not a demo organization. */
+  const realGate = (user) => {
+    if (!config.realSources || db.get('SELECT is_demo FROM tenants WHERE id = ?', user.tenantId)?.is_demo) {
+      throw new HttpError(403, 'real_sources_off', 'Real sources are switched off on this server. It only holds Tier 0 data: invented records and public documents.');
+    }
+  };
+  s.realGate = realGate;
 
   router.on('GET', '/api/sources', ({ res, user }) => {
     requirePermission(user, 'sources.read');
-    ok(res, visibleSources(db, user).map(r => sourceView(r, user, s.running.has(r.id))));
+    const phoneOn = switches(db, user.tenantId, config).phoneLink;
+    // Phone Link sources stay hidden while the switch is off.
+    ok(res, visibleSources(db, user).filter(r => phoneOn || !String(parseJson(r.config, {}).provider || '').startsWith('phonelink')).map(r => sourceView(r, user, s.running.has(r.id))));
   });
 
   router.on('GET', '/api/sources/:id/jobs', ({ res, user, params }) => {
@@ -149,6 +171,8 @@ export function registerSourceRoutes(router, s) {
   /* ---- Phone Link (Android texts on this PC) ---- */
   const phoneLinkGate = (user, ip) => {
     requirePermission(user, 'sources.manage');
+    realGate(user);
+    if (!switches(db, user.tenantId, config).phoneLink) throw new HttpError(403, 'phonelink_off', 'Phone Link texts are experimental and switched off. A Supervisor can turn them on in Settings.');
     // Texts on this PC belong to whoever uses it, so only someone sitting at it may connect them.
     if (!isLoopback(ip)) throw new HttpError(403, 'phonelink_local_only', 'Connect Phone Link from the PC where it runs (open the app at http://localhost there).');
   };
@@ -191,6 +215,7 @@ export function registerSourceRoutes(router, s) {
   /* ---- Gmail OAuth ---- */
 
   router.on('POST', '/api/connectors/gmail/authorize', async ({ req, res, user, ipHash }) => {
+    if (user) realGate(user);
     requirePermission(user, 'sources.manage');
     const body = validate({ query: { type: 'string', max: 500, default: config.gmail.defaultQuery }, shareWithRoles: { ...roleList, default: [] } }, await readJson(req));
     const result = s.gmail.authorize(user, body);
@@ -217,9 +242,21 @@ export function registerSourceRoutes(router, s) {
 
   /* ---- Uploads and message imports ---- */
 
+  /** One shared "Public documents" source per organization: Tier 0 data, searched with the demo corpus. */
+  function publicCollection(user) {
+    let row = db.get("SELECT * FROM sources WHERE tenant_id = ? AND type = 'uploads' AND json_extract(config, '$.publicDocs') = 1", user.tenantId);
+    if (!row) {
+      const id = crypto.randomUUID();
+      db.run(`INSERT INTO sources (id, tenant_id, type, name, owner_user_id, visibility, allowed_roles, config, account_label) VALUES (?, ?, 'uploads', 'Public documents', ?, 'roles', '[]', '{"publicDocs": 1}', 'Openly published documents')`, id, user.tenantId, user.id);
+      audit.write({ tenantId: user.tenantId, userId: user.id, action: 'source.connected', targetType: 'source', targetId: id, details: { type: 'public documents' } });
+      row = db.get('SELECT * FROM sources WHERE id = ?', id);
+    }
+    return row;
+  }
+
   function defaultCollection(user, type) {
     const name = type === 'uploads' ? 'Uploaded documents' : 'Imported messages';
-    let row = db.get("SELECT * FROM sources WHERE tenant_id = ? AND type = ? AND owner_user_id = ? AND json_extract(config, '$.provider') IS NOT 'phonelink' ORDER BY created_at LIMIT 1", user.tenantId, type, user.id);
+    let row = db.get("SELECT * FROM sources WHERE tenant_id = ? AND type = ? AND owner_user_id = ? AND json_extract(config, '$.provider') IS NULL AND json_extract(config, '$.publicDocs') IS NULL ORDER BY created_at LIMIT 1", user.tenantId, type, user.id);
     if (!row) {
       const id = crypto.randomUUID();
       db.run("INSERT INTO sources (id, tenant_id, type, name, owner_user_id, visibility, allowed_roles, account_label) VALUES (?, ?, ?, ?, ?, 'owner', '[]', ?)", id, user.tenantId, type, `${name} (${user.name})`, user.id, user.email);
@@ -231,19 +268,32 @@ export function registerSourceRoutes(router, s) {
 
   router.on('POST', '/api/uploads', async ({ req, res, user, url, ipHash }) => {
     requirePermission(user, 'uploads.create');
-    const kind = url.searchParams.get('kind') === 'messages' ? 'messages' : 'uploads';
+    const requested = url.searchParams.get('kind');
+    const isPublic = requested === 'public';
+    const kind = requested === 'messages' ? 'messages' : 'uploads';
+    let provenance = null;
+    if (isPublic) {
+      const src = String(req.headers['x-source-url'] || ''), got = String(req.headers['x-retrieved-at'] || ''), terms = String(req.headers['x-terms-checked'] || '');
+      let okUrl = false; try { okUrl = ['http:', 'https:'].includes(new URL(src).protocol); } catch { /* invalid */ }
+      if (!okUrl) throw new HttpError(400, 'missing_url', 'Give the public web address the document was downloaded from.');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(got) || Number.isNaN(Date.parse(got))) throw new HttpError(400, 'missing_date', 'Give the retrieval date (YYYY-MM-DD).');
+      if (terms !== 'yes') throw new HttpError(400, 'terms_not_checked', 'Confirm that the site’s terms of use allow this use before adding the document.');
+      provenance = { kind: 'public', url: src, retrievedAt: got, termsChecked: true, addedBy: user.name };
+    } else {
+      realGate(user);
+    }
     let filename = '';
     try { filename = decodeURIComponent(String(req.headers['x-file-name'] || '')); } catch { /* fall through */ }
     filename = path.basename(filename).replace(/[^\p{L}\p{N} ._()-]/gu, '_').slice(0, 180);
     if (!filename || filename.startsWith('.')) throw new HttpError(400, 'missing_filename', 'Send the file name in the X-File-Name header.');
     const sourceId = url.searchParams.get('sourceId');
-    const source = sourceId ? loadManageable(s, user, sourceId) : defaultCollection(user, kind);
-    if (isPhoneLink(source)) throw new HttpError(400, 'wrong_source', 'Phone Link texts update by themselves. Import message exports into a message import source instead.');
+    const source = isPublic ? publicCollection(user) : sourceId ? loadManageable(s, user, sourceId) : defaultCollection(user, kind);
+    if (isPhoneLink(source) || parseJson(source.config, {}).provider === 'phonelink-agent') throw new HttpError(400, 'wrong_source', 'Phone Link texts update by themselves. Import message exports into a message import source instead.');
     if (source.type !== kind) throw new HttpError(400, 'wrong_source', kind === 'messages' ? 'Message exports go into a message import source.' : 'Documents go into an upload source.');
     const buf = await readBody(req, config.uploads.maxBytes);
     if (!buf.length) throw new HttpError(400, 'empty_file', 'The file is empty.');
     const sha = crypto.createHash('sha256').update(buf).digest('hex');
-    const ctx = { tenantId: user.tenantId, sourceId: source.id, sourceType: kind };
+    const ctx = { tenantId: user.tenantId, sourceId: source.id, sourceType: kind, isSynthetic: isPublic };
 
     if (kind === 'messages') {
       let parsed;
@@ -275,7 +325,8 @@ export function registerSourceRoutes(router, s) {
       createdAt: ex.createdAt ?? null, modifiedAt: ex.modifiedAt ?? null, documentType: ex.documentType,
       accessPermissions: {}, keywords: undefined
     });
-    db.run('UPDATE records SET source_url = ? WHERE id = ?', `/api/records/${result.id}/original`, result.id);
+    db.run('UPDATE records SET source_url = ? WHERE id = ?', provenance ? provenance.url : `/api/records/${result.id}/original`, result.id);
+    if (provenance) db.run("UPDATE records SET extracted_entities = json_set(extracted_entities, '$.provenance', json(?)) WHERE id = ?", JSON.stringify(provenance), result.id);
     db.run("UPDATE records SET extracted_entities = json_set(extracted_entities, '$.file', json(?)) WHERE id = ?", JSON.stringify({ name: filename, bytes: buf.length, ext, status: ex.status, notes: ex.notes }), result.id);
     await embedPending(db, s.embedder, user.tenantId).catch(() => 0);
     db.run("UPDATE sources SET last_sync_at = ?, last_sync_status = 'succeeded', status = 'connected' WHERE id = ?", nowIso(), source.id);
@@ -314,6 +365,7 @@ export function registerSourceRoutes(router, s) {
   });
 
   router.on('POST', '/api/connectors/database/inspect', async ({ req, res, user }) => {
+    if (user) realGate(user);
     requirePermission(user, 'sources.manage');
     const body = validate({ ...dbSpec, name: { type: 'string', max: 120, default: 'inspect' } }, await readJson(req));
     const { cfg, secret } = splitDbBody(body);
@@ -322,6 +374,7 @@ export function registerSourceRoutes(router, s) {
   });
 
   router.on('POST', '/api/sources/database', async ({ req, res, user, ipHash }) => {
+    if (user) realGate(user);
     requirePermission(user, 'sources.manage');
     const body = validate(dbSpec, await readJson(req));
     if (!body.tables?.length) throw new HttpError(400, 'no_tables', 'Choose at least one table to index.');

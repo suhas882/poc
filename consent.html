@@ -1,5 +1,28 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Search permission | Public Records Search</title><link rel="stylesheet" href="styles.css"><link rel="icon" href="/favicon.svg" type="image/svg+xml"></head>
-<body data-page="consent"><a class="skip-link" href="#main">Skip to main content</a><header class="topbar"><div class="brand"><span class="brand-mark">B</span><div><strong>Public Records Search</strong><small>City Clerk staff workspace</small></div></div><div class="topbar-controls"><div class="user-box" id="user-box"></div></div></header>
-<main class="page-shell consent-shell" id="main" tabindex="-1"><section class="card consent-card" id="consent-root"><p class="helper">Loading…</p></section></main>
-<script src="app.js"></script><script type="module" src="/client/pages/consent.js"></script></body></html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Search permission | Public Records Search</title>
+<link rel="stylesheet" href="/styles.css">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+</head>
+<body data-page="consent">
+<a class="skip-link" href="#main">Skip to main content</a>
+<div class="app">
+  <aside class="sidebar" id="sidebar" aria-label="Sidebar"></aside>
+  <div class="main">
+    <header class="topbar">
+      <h1 id="page-title">Search permission</h1>
+      <span class="staff-badge"><span aria-hidden="true">&#10003;</span> Staff decide.<span class="long">&nbsp;The tool finds, ranks and logs.</span></span>
+    </header>
+    <main class="work" id="main" tabindex="-1">
+      <div id="tier"></div>
+      <div id="root" class="stack"><p class="helper">Loading&hellip;</p></div>
+    </main>
+    <footer class="page-foot">Public Records AI Search &middot; proof of concept &middot; WCAG 2.1 AA-aligned interface &middot; Staff decide responsiveness, exemptions, redaction and release.</footer>
+  </div>
+</div>
+<script type="module" src="/client/pages/consent.js"></script>
+</body>
+</html>

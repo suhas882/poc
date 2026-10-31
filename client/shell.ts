@@ -1,101 +1,93 @@
-// Shared page chrome: mode switch (Demo / Real data), signed-in user, navigation, mode banner.
-import { authStatus, can, signOut, type AuthStatus } from './api.js';
-import { $, $$, h, replace, ROLE_LABEL } from './ui.js';
+// Shared page frame: navy sidebar with the seven pages, top bar with the page title and the "Staff decide" badge,
+// signed-in user (with a role switcher in the demo), and the Tier 0 / real-data banner.
+import { authStatus, can, post, signOut, type AuthStatus } from './api.js';
+import { $, h, replace, ROLE_LABEL, toast } from './ui.js';
 
 export type Mode = 'demo' | 'real';
 const MODE_KEY = 'prs-mode';
 
+export const NAV: { href: string; label: string; page: string; icon: string; perm?: string }[] = [
+  { href: '/', label: 'Request & Plan', page: 'request', icon: '▣' },
+  { href: '/search.html', label: 'Search Results', page: 'search', icon: '≡' },
+  { href: '/sources.html', label: 'Connected Sources', page: 'sources', icon: '⛁' },
+  { href: '/history.html', label: 'Search History', page: 'history', icon: '↺' },
+  { href: '/evaluation.html', label: 'Evaluation', page: 'evaluation', icon: '▲' },
+  { href: '/audit.html', label: 'Audit Logs', page: 'audit', icon: '✓', perm: 'audit.read' },
+  { href: '/settings.html', label: 'Settings', page: 'settings', icon: '⚙' }
+];
+
+let status: AuthStatus | null = null;
+
+/** Which data new requests use: the Tier 0 demo corpus, or real sources (only when the server allows them). */
 export function currentMode(): Mode {
+  if (!status?.realSources || status.user?.isDemo) return 'demo';
   try { return localStorage.getItem(MODE_KEY) === 'real' ? 'real' : 'demo'; } catch { return 'demo'; }
 }
 
-// Set the mode attribute immediately so the right panels show before data loads.
-document.body.dataset.mode = currentMode();
-
-export const NAV: { href: string; label: string; page: string }[] = [
-  { href: '/', label: 'Request & Plan', page: 'request' },
-  { href: '/search.html', label: 'Search Results', page: 'search' },
-  { href: '/sources.html', label: 'Connected Sources', page: 'sources' },
-  { href: '/history.html', label: 'Search History', page: 'history' },
-  { href: '/evaluation.html', label: 'Evaluation', page: 'evaluation' },
-  { href: '/audit.html', label: 'Audit Logs', page: 'audit' },
-  { href: '/settings.html', label: 'Settings', page: 'settings' }
-];
-
-function setMode(mode: Mode) {
-  try { localStorage.setItem(MODE_KEY, mode); } catch { /* storage blocked: mode resets on reload */ }
-  location.reload();
-}
-
-/** Render shared chrome and return auth status. Pages with `realOnly` show a sign-in prompt instead of content when signed out. */
-export async function initShell(opts: { realOnly?: boolean } = {}): Promise<AuthStatus> {
-  const status = await authStatus();
-  const mode = currentMode();
+/** Render the frame and return the auth status. Every page except sign-in needs a signed-in user. */
+export async function initShell(opts: { title?: string } = {}): Promise<AuthStatus> {
+  status = await authStatus();
   const page = document.body.dataset.page || '';
+  const here = location.pathname + location.search;
 
-  // Ask for search permission right after sign-in, before anything else.
-  if (status.user && status.consentRequired && page !== 'consent' && (opts.realOnly || mode === 'real')) {
-    location.replace(`/consent.html?next=${encodeURIComponent(location.pathname + location.search)}`);
+  if (!status.user) {
+    location.replace(`/login.html?next=${encodeURIComponent(here)}`);
     return new Promise<AuthStatus>(() => {});
   }
+  if (status.consentRequired && page !== 'consent' && currentMode() === 'real') {
+    location.replace(`/consent.html?next=${encodeURIComponent(here)}`);
+    return new Promise<AuthStatus>(() => {});
+  }
+  if (opts.title) { const t = $('#page-title'); if (t) t.textContent = opts.title; document.title = `${opts.title} | Public Records Search`; }
 
-  const nav = $('#main-nav');
-  if (nav) replace(nav, ...NAV.map(n => h('a', { href: n.href, class: n.page === page ? 'active' : undefined, 'aria-current': n.page === page ? 'page' : undefined }, n.label)));
-
-  const modeSwitch = $('#mode-switch');
-  if (modeSwitch) {
-    const disabledReal = status.demoOnly;
-    replace(modeSwitch,
-      h('span', { class: 'theme-picker-label' }, 'MODE'),
-      h('button', { type: 'button', 'aria-pressed': String(mode === 'demo'), on: { click: () => mode !== 'demo' && setMode('demo') } }, 'Demo'),
-      h('button', { type: 'button', 'aria-pressed': String(mode === 'real'), disabled: disabledReal, title: disabledReal ? 'This server runs the synthetic demo only.' : undefined, on: { click: () => mode !== 'real' && setMode('real') } }, 'Real data'));
+  const user = status.user;
+  const side = $('#sidebar');
+  if (side) {
+    const mode = currentMode();
+    const modeToggle = status.realSources && !user.isDemo ? h('div', null,
+      h('p', { class: 'mode-label', id: 'mode-label' }, 'Data for new requests'),
+      h('div', { class: 'mode-toggle', role: 'group', 'aria-labelledby': 'mode-label' },
+        h('button', { type: 'button', 'aria-pressed': String(mode === 'demo'), on: { click: () => setMode('demo') } }, 'Demo corpus'),
+        h('button', { type: 'button', 'aria-pressed': String(mode === 'real'), on: { click: () => setMode('real') } }, 'Real sources'))) : null;
+    const roleSwitch = user.isDemo ? h('label', null, h('span', { class: 'visually-hidden' }, 'Switch demo role'),
+      h('select', { on: { change: async (e: Event) => {
+        const role = (e.target as HTMLSelectElement).value;
+        try { await post('/api/auth/demo', { role }); location.reload(); } catch { toast('Could not switch role.', 'error'); }
+      } } }, ...Object.entries(ROLE_LABEL).map(([id, label]) => h('option', { value: id, selected: id === user.role }, `View as: ${label}`)))) : null;
+    replace(side,
+      h('a', { class: 'brand', href: '/' }, h('span', { class: 'brand-mark', 'aria-hidden': 'true' }, 'B'), h('span', null, h('b', null, 'Public Records Search'), h('small', null, 'City Clerk staff workspace'))),
+      h('nav', { class: 'nav', 'aria-label': 'Main' }, NAV.filter(n => !n.perm || can(status!, n.perm)).map(n =>
+        h('a', { href: n.href, 'aria-current': n.page === page ? 'page' : undefined }, h('span', { class: 'ico', 'aria-hidden': 'true' }, n.icon), n.label))),
+      h('div', { class: 'sidebar-foot' }, modeToggle,
+        h('div', { class: 'user-card' }, h('b', null, user.name), h('small', null, `${ROLE_LABEL[user.role] || user.role}${user.isDemo ? ' · demo account' : ''}`), roleSwitch,
+          h('button', { type: 'button', class: 'side-link', on: { click: () => signOut() } }, 'Sign out'))));
   }
 
-  const userBox = $('#user-box');
-  if (userBox) {
-    if (status.user) {
-      replace(userBox,
-        h('span', { class: 'user-name' }, h('b', null, status.user.name), h('small', null, ROLE_LABEL[status.user.role] || status.user.role)),
-        h('button', { type: 'button', class: 'user-signout', on: { click: () => signOut() } }, 'Sign out'));
-    } else if (!status.demoOnly && !status.offline) {
-      replace(userBox, h('a', { class: 'user-signin', href: `/login.html?next=${encodeURIComponent(location.pathname + location.search)}` }, 'Sign in'));
-    } else {
-      replace(userBox, h('span', { class: 'local-tag' }, h('i'), ' Local demo'));
-    }
+  const top = $('.topbar');
+  if (top && !$('.menu-button', top)) {
+    const btn = h('button', { type: 'button', class: 'menu-button', 'aria-label': 'Open menu', 'aria-expanded': 'false', 'aria-controls': 'sidebar' }, '☰');
+    btn.addEventListener('click', () => { const open = side?.classList.toggle('open'); btn.setAttribute('aria-expanded', String(Boolean(open))); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && side?.classList.contains('open')) { side.classList.remove('open'); btn.setAttribute('aria-expanded', 'false'); btn.focus(); } });
+    side?.addEventListener('click', (e) => { if (e.target === side) side.classList.remove('open'); });
+    const title = $('#page-title', top);
+    const wrap = h('div', { class: 'topbar-title' }, btn);
+    title?.replaceWith(wrap); if (title) wrap.appendChild(title);
   }
 
-  const banner = $('#mode-banner');
-  if (banner) {
-    const realPage = opts.realOnly;
-    const text = realPage
-      ? status.user ? `Signed in to ${status.user.email}. Only records your role may see are shown.` : 'Sign in to use this page. It works with real connected sources.'
-      : mode === 'demo'
-        ? 'Demo mode: 18 invented requests and synthetic records. Nothing is sent to a server or an AI service.'
-        : status.user ? 'Real data mode: searches run over your connected sources, with access checks and an audit trail.' : 'Real data mode: sign in to search your connected sources.';
-    banner.dataset.kind = realPage ? 'real' : mode;
-    replace(banner, h('span', { class: 'mode-pill' }, realPage ? 'Real data' : mode === 'demo' ? 'Synthetic' : 'Real data'), h('span', null, text));
-  }
-
-  // Hide nav entries a signed-in role can never use.
-  if (status.user) {
-    for (const a of $$<HTMLAnchorElement>('#main-nav a')) {
-      if (a.getAttribute('href') === '/audit.html' && !can(status, 'audit.read')) a.hidden = true;
-    }
-  }
-
-  if ((opts.realOnly || mode === 'real') && !status.user) {
-    const gate = $('#signin-gate');
-    if (gate) {
-      gate.hidden = false;
-      replace(gate, h('div', { class: 'card gate-card' },
-        h('h2', null, status.demoOnly ? 'Real data is switched off on this server' : status.setupRequired ? 'Set up the first administrator' : 'Sign in to continue'),
-        h('p', { class: 'helper' }, status.demoOnly
-          ? 'This server runs with DEMO_ONLY=true, so only the synthetic demo is available.'
-          : status.setupRequired ? 'No accounts exist yet. Create the first administrator from this computer.' : 'Connected sources, search history and audit logs are only available to signed-in staff.'),
-        status.demoOnly ? h('a', { class: 'button secondary link-button', href: '/' }, 'Open the demo')
-          : h('a', { class: 'button primary link-button', href: `/login.html?next=${encodeURIComponent(location.pathname + location.search)}` }, status.setupRequired ? 'Create administrator' : 'Sign in')));
-      for (const el of $$('.needs-auth')) el.hidden = true;
-    }
+  const tier = $('#tier');
+  if (tier) {
+    const real = currentMode() === 'real';
+    replace(tier, h('div', { class: 'tier-banner', role: 'note' },
+      real ? h('span', { class: 'pill teal' }, 'Real sources') : h('span', { class: 'pill gray' }, 'Tier 0'),
+      h('span', null, real ? 'New requests search your connected, read-only sources. Access checks and the audit log apply.'
+        : 'Demo data only: invented requests, invented records and openly published documents. Real sources are off.')));
   }
   return status;
 }
+
+function setMode(mode: Mode) {
+  try { localStorage.setItem(MODE_KEY, mode); } catch { /* storage blocked */ }
+  location.reload();
+}
+
+export const shellStatus = () => status;

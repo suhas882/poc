@@ -1,448 +1,220 @@
 {
-  "notice": "Synthetic-only benchmark. Metrics are target outcomes to be validated during discovery. Timing is local ranking time, not staff time.",
-  "corpus_size": 18,
-  "scenario_count": 18,
-  "scenarios": [
+  "generatedAt": "2026-10-31T05:56:33.437Z",
+  "note": "Demo results on public and invented data, not production performance. Targets are outcomes to be validated during discovery [est.].",
+  "keyword": {
+    "recall10": 0.521,
+    "recall50": 0.521,
+    "precision10": 0.517,
+    "meanFirstRank": 14.889,
+    "medianMs": 2.8
+  },
+  "hybrid": {
+    "recall10": 0.749,
+    "recall50": 0.76,
+    "precision10": 0.447,
+    "meanFirstRank": 6.556,
+    "medianMs": 2
+  },
+  "kinds": {
+    "Different wording": 6,
+    "Exact keyword": 6,
+    "Vague request": 6
+  },
+  "labels": {
+    "adjudicated": 0,
+    "provisional": 18
+  },
+  "replay": [
     {
       "id": "syn-1",
-      "type": "Different wording",
-      "keyword": {
-        "recall_at_10": 42.9,
-        "precision_at_10": 30,
-        "recall_at_50": 42.9,
-        "precision_at_50": 16.7,
-        "first_relevant_rank": 3,
-        "time_to_first_relevant_ms": 10.686,
-        "ranking_time_ms": 10.686
-      },
-      "synonym_expanded": {
-        "recall_at_10": 100,
-        "precision_at_10": 70,
-        "recall_at_50": 100,
-        "precision_at_50": 38.9,
-        "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 17.196,
-        "ranking_time_ms": 17.196
-      }
+      "label": "Different wording · road closure",
+      "released": 10,
+      "inTop50": 10,
+      "recall": 1,
+      "keywordRecall": 0,
+      "missed": []
     },
     {
       "id": "syn-2",
-      "type": "Different wording",
-      "keyword": {
-        "recall_at_10": 80,
-        "precision_at_10": 40,
-        "recall_at_50": 100,
-        "precision_at_50": 27.8,
-        "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 6.744,
-        "ranking_time_ms": 6.744
-      },
-      "synonym_expanded": {
-        "recall_at_10": 100,
-        "precision_at_10": 50,
-        "recall_at_50": 100,
-        "precision_at_50": 27.8,
-        "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 9.616,
-        "ranking_time_ms": 9.616
-      }
+      "label": "Different wording · work zone",
+      "released": 5,
+      "inTop50": 4,
+      "recall": 0.8,
+      "keywordRecall": 0,
+      "missed": [
+        "R-013"
+      ]
     },
     {
       "id": "syn-3",
-      "type": "Different wording",
-      "keyword": {
-        "recall_at_10": 100,
-        "precision_at_10": 20,
-        "recall_at_50": 100,
-        "precision_at_50": 11.1,
-        "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 3.173,
-        "ranking_time_ms": 3.173
-      },
-      "synonym_expanded": {
-        "recall_at_10": 100,
-        "precision_at_10": 20,
-        "recall_at_50": 100,
-        "precision_at_50": 11.1,
-        "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 10.372,
-        "ranking_time_ms": 10.372
-      }
+      "label": "Different wording · water pipe",
+      "released": 2,
+      "inTop50": 2,
+      "recall": 1,
+      "keywordRecall": 0.5,
+      "missed": []
     },
     {
       "id": "syn-4",
-      "type": "Different wording",
-      "keyword": {
-        "recall_at_10": 100,
-        "precision_at_10": 30,
-        "recall_at_50": 100,
-        "precision_at_50": 16.7,
-        "first_relevant_rank": 2,
-        "time_to_first_relevant_ms": 4.541,
-        "ranking_time_ms": 4.541
-      },
-      "synonym_expanded": {
-        "recall_at_10": 100,
-        "precision_at_10": 30,
-        "recall_at_50": 100,
-        "precision_at_50": 16.7,
-        "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 5.999,
-        "ranking_time_ms": 5.999
-      }
+      "label": "Different wording · pedestrian access",
+      "released": 3,
+      "inTop50": 3,
+      "recall": 1,
+      "keywordRecall": 0,
+      "missed": []
     },
     {
       "id": "syn-5",
-      "type": "Different wording",
-      "keyword": {
-        "recall_at_10": 100,
-        "precision_at_10": 10,
-        "recall_at_50": 100,
-        "precision_at_50": 5.6,
-        "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 1.896,
-        "ranking_time_ms": 1.896
-      },
-      "synonym_expanded": {
-        "recall_at_10": 100,
-        "precision_at_10": 10,
-        "recall_at_50": 100,
-        "precision_at_50": 5.6,
-        "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 3.311,
-        "ranking_time_ms": 3.311
-      }
+      "label": "Different wording · drainage",
+      "released": 1,
+      "inTop50": 1,
+      "recall": 1,
+      "keywordRecall": 1,
+      "missed": []
     },
     {
       "id": "syn-6",
-      "type": "Different wording",
-      "keyword": {
-        "recall_at_10": 100,
-        "precision_at_10": 10,
-        "recall_at_50": 100,
-        "precision_at_50": 5.6,
-        "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 3.026,
-        "ranking_time_ms": 3.026
-      },
-      "synonym_expanded": {
-        "recall_at_10": 100,
-        "precision_at_10": 10,
-        "recall_at_50": 100,
-        "precision_at_50": 5.6,
-        "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 4.439,
-        "ranking_time_ms": 4.439
-      }
+      "label": "Different wording · site access",
+      "released": 1,
+      "inTop50": 1,
+      "recall": 1,
+      "keywordRecall": 1,
+      "missed": []
     },
     {
       "id": "exact-1",
-      "type": "Exact keyword",
-      "keyword": {
-        "recall_at_10": 100,
-        "precision_at_10": 10,
-        "recall_at_50": 100,
-        "precision_at_50": 5.6,
-        "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 2.705,
-        "ranking_time_ms": 2.705
-      },
-      "synonym_expanded": {
-        "recall_at_10": 100,
-        "precision_at_10": 10,
-        "recall_at_50": 100,
-        "precision_at_50": 5.6,
-        "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 4.298,
-        "ranking_time_ms": 4.298
-      }
+      "label": "Exact keywords · traffic signal",
+      "released": 1,
+      "inTop50": 1,
+      "recall": 1,
+      "keywordRecall": 1,
+      "missed": []
     },
     {
       "id": "exact-2",
-      "type": "Exact keyword",
-      "keyword": {
-        "recall_at_10": 100,
-        "precision_at_10": 10,
-        "recall_at_50": 100,
-        "precision_at_50": 5.6,
-        "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 2.965,
-        "ranking_time_ms": 2.965
-      },
-      "synonym_expanded": {
-        "recall_at_10": 100,
-        "precision_at_10": 10,
-        "recall_at_50": 100,
-        "precision_at_50": 5.6,
-        "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 4.455,
-        "ranking_time_ms": 4.455
-      }
+      "label": "Exact keywords · Cedar Avenue email",
+      "released": 1,
+      "inTop50": 1,
+      "recall": 1,
+      "keywordRecall": 1,
+      "missed": []
     },
     {
       "id": "exact-3",
-      "type": "Exact keyword",
-      "keyword": {
-        "recall_at_10": 100,
-        "precision_at_10": 10,
-        "recall_at_50": 100,
-        "precision_at_50": 5.6,
-        "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 3.424,
-        "ranking_time_ms": 3.424
-      },
-      "synonym_expanded": {
-        "recall_at_10": 100,
-        "precision_at_10": 10,
-        "recall_at_50": 100,
-        "precision_at_50": 5.6,
-        "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 4.822,
-        "ranking_time_ms": 4.822
-      }
+      "label": "Exact keywords · permit checklist",
+      "released": 1,
+      "inTop50": 1,
+      "recall": 1,
+      "keywordRecall": 1,
+      "missed": []
     },
     {
       "id": "exact-4",
-      "type": "Exact keyword",
-      "keyword": {
-        "recall_at_10": 100,
-        "precision_at_10": 10,
-        "recall_at_50": 100,
-        "precision_at_50": 5.6,
-        "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 1.575,
-        "ranking_time_ms": 1.575
-      },
-      "synonym_expanded": {
-        "recall_at_10": 100,
-        "precision_at_10": 10,
-        "recall_at_50": 100,
-        "precision_at_50": 5.6,
-        "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 2.751,
-        "ranking_time_ms": 2.751
-      }
+      "label": "Exact keywords · stormwater",
+      "released": 1,
+      "inTop50": 1,
+      "recall": 1,
+      "keywordRecall": 1,
+      "missed": []
     },
     {
       "id": "exact-5",
-      "type": "Exact keyword",
-      "keyword": {
-        "recall_at_10": 100,
-        "precision_at_10": 10,
-        "recall_at_50": 100,
-        "precision_at_50": 5.6,
-        "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 2.611,
-        "ranking_time_ms": 2.611
-      },
-      "synonym_expanded": {
-        "recall_at_10": 100,
-        "precision_at_10": 10,
-        "recall_at_50": 100,
-        "precision_at_50": 5.6,
-        "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 4.246,
-        "ranking_time_ms": 4.246
-      }
+      "label": "Exact keywords · parks work order",
+      "released": 1,
+      "inTop50": 1,
+      "recall": 1,
+      "keywordRecall": 1,
+      "missed": []
     },
     {
       "id": "exact-6",
-      "type": "Exact keyword",
-      "keyword": {
-        "recall_at_10": 100,
-        "precision_at_10": 10,
-        "recall_at_50": 100,
-        "precision_at_50": 5.6,
-        "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 2.144,
-        "ranking_time_ms": 2.144
-      },
-      "synonym_expanded": {
-        "recall_at_10": 100,
-        "precision_at_10": 10,
-        "recall_at_50": 100,
-        "precision_at_50": 5.6,
-        "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 4.605,
-        "ranking_time_ms": 4.605
-      }
+      "label": "Exact keywords · council packet",
+      "released": 1,
+      "inTop50": 0,
+      "recall": 0,
+      "keywordRecall": 0,
+      "missed": [
+        "R-010"
+      ]
     },
     {
       "id": "vague-1",
-      "type": "Vague request",
-      "keyword": {
-        "recall_at_10": 57.1,
-        "precision_at_10": 40,
-        "recall_at_50": 57.1,
-        "precision_at_50": 22.2,
-        "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 1.45,
-        "ranking_time_ms": 1.45
-      },
-      "synonym_expanded": {
-        "recall_at_10": 57.1,
-        "precision_at_10": 40,
-        "recall_at_50": 57.1,
-        "precision_at_50": 22.2,
-        "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 2.772,
-        "ranking_time_ms": 2.772
-      }
+      "label": "Broad request · city projects",
+      "released": 7,
+      "inTop50": 2,
+      "recall": 0.286,
+      "keywordRecall": 0.143,
+      "missed": [
+        "R-003",
+        "R-005",
+        "R-010",
+        "R-016",
+        "R-018"
+      ]
     },
     {
       "id": "vague-2",
-      "type": "Vague request",
-      "keyword": {
-        "recall_at_10": 80,
-        "precision_at_10": 40,
-        "recall_at_50": 80,
-        "precision_at_50": 22.2,
-        "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 0.848,
-        "ranking_time_ms": 0.848
-      },
-      "synonym_expanded": {
-        "recall_at_10": 80,
-        "precision_at_10": 40,
-        "recall_at_50": 80,
-        "precision_at_50": 22.2,
-        "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 0.951,
-        "ranking_time_ms": 0.951
-      }
+      "label": "Broad request · permits",
+      "released": 5,
+      "inTop50": 4,
+      "recall": 0.8,
+      "keywordRecall": 0.2,
+      "missed": [
+        "R-003"
+      ]
     },
     {
       "id": "vague-3",
-      "type": "Vague request",
-      "keyword": {
-        "recall_at_10": 75,
-        "precision_at_10": 30,
-        "recall_at_50": 75,
-        "precision_at_50": 16.7,
-        "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 0.598,
-        "ranking_time_ms": 0.598
-      },
-      "synonym_expanded": {
-        "recall_at_10": 100,
-        "precision_at_10": 40,
-        "recall_at_50": 100,
-        "precision_at_50": 22.2,
-        "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 1.761,
-        "ranking_time_ms": 1.761
-      }
+      "label": "Broad request · maintenance",
+      "released": 4,
+      "inTop50": 4,
+      "recall": 1,
+      "keywordRecall": 0.75,
+      "missed": []
     },
     {
       "id": "vague-4",
-      "type": "Vague request",
-      "keyword": {
-        "recall_at_10": 100,
-        "precision_at_10": 80,
-        "recall_at_50": 100,
-        "precision_at_50": 44.4,
-        "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 2.005,
-        "ranking_time_ms": 2.005
-      },
-      "synonym_expanded": {
-        "recall_at_10": 100,
-        "precision_at_10": 80,
-        "recall_at_50": 100,
-        "precision_at_50": 44.4,
-        "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 1.448,
-        "ranking_time_ms": 1.448
-      }
+      "label": "Broad request · transportation",
+      "released": 8,
+      "inTop50": 1,
+      "recall": 0.125,
+      "keywordRecall": 0.125,
+      "missed": [
+        "R-001",
+        "R-002",
+        "R-004",
+        "R-009",
+        "R-013",
+        "R-014",
+        "R-017"
+      ]
     },
     {
       "id": "vague-5",
-      "type": "Vague request",
-      "keyword": {
-        "recall_at_10": 100,
-        "precision_at_10": 60,
-        "recall_at_50": 100,
-        "precision_at_50": 33.3,
-        "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 1.101,
-        "ranking_time_ms": 1.101
-      },
-      "synonym_expanded": {
-        "recall_at_10": 100,
-        "precision_at_10": 60,
-        "recall_at_50": 100,
-        "precision_at_50": 33.3,
-        "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 1.366,
-        "ranking_time_ms": 1.366
-      }
+      "label": "Broad request · utilities",
+      "released": 6,
+      "inTop50": 0,
+      "recall": 0,
+      "keywordRecall": 0,
+      "missed": [
+        "R-002",
+        "R-006",
+        "R-011",
+        "R-015",
+        "R-016",
+        "R-018"
+      ]
     },
     {
       "id": "vague-6",
-      "type": "Vague request",
-      "keyword": {
-        "recall_at_10": 66.7,
-        "precision_at_10": 20,
-        "recall_at_50": 66.7,
-        "precision_at_50": 11.1,
-        "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 0.732,
-        "ranking_time_ms": 0.732
-      },
-      "synonym_expanded": {
-        "recall_at_10": 66.7,
-        "precision_at_10": 20,
-        "recall_at_50": 66.7,
-        "precision_at_50": 11.1,
-        "first_relevant_rank": 1,
-        "time_to_first_relevant_ms": 0.639,
-        "ranking_time_ms": 0.639
-      }
+      "label": "Broad request · neighborhood",
+      "released": 3,
+      "inTop50": 2,
+      "recall": 0.667,
+      "keywordRecall": 0.667,
+      "missed": [
+        "R-014"
+      ]
     }
-  ],
-  "Exact keyword": {
-    "count": 6,
-    "keyword_recall_at_10": 100,
-    "keyword_precision_at_10": 10,
-    "keyword_recall_at_50": 100,
-    "keyword_precision_at_50": 5.6,
-    "synonym_expanded_recall_at_10": 100,
-    "synonym_expanded_precision_at_10": 10,
-    "synonym_expanded_recall_at_50": 100,
-    "synonym_expanded_precision_at_50": 5.6,
-    "keyword_mean_first_relevant_rank": 1,
-    "keyword_mean_time_to_first_relevant_ms": 2.571,
-    "synonym_expanded_mean_first_relevant_rank": 1,
-    "synonym_expanded_mean_time_to_first_relevant_ms": 4.196
-  },
-  "Different wording": {
-    "count": 6,
-    "keyword_recall_at_10": 87.1,
-    "keyword_precision_at_10": 23.3,
-    "keyword_recall_at_50": 90.5,
-    "keyword_precision_at_50": 13.9,
-    "synonym_expanded_recall_at_10": 100,
-    "synonym_expanded_precision_at_10": 31.7,
-    "synonym_expanded_recall_at_50": 100,
-    "synonym_expanded_precision_at_50": 17.6,
-    "keyword_mean_first_relevant_rank": 1.5,
-    "keyword_mean_time_to_first_relevant_ms": 5.011,
-    "synonym_expanded_mean_first_relevant_rank": 1,
-    "synonym_expanded_mean_time_to_first_relevant_ms": 8.489
-  },
-  "Vague request": {
-    "count": 6,
-    "keyword_recall_at_10": 79.8,
-    "keyword_precision_at_10": 45,
-    "keyword_recall_at_50": 79.8,
-    "keyword_precision_at_50": 25,
-    "synonym_expanded_recall_at_10": 84,
-    "synonym_expanded_precision_at_10": 46.7,
-    "synonym_expanded_recall_at_50": 84,
-    "synonym_expanded_precision_at_50": 25.9,
-    "keyword_mean_first_relevant_rank": 1,
-    "keyword_mean_time_to_first_relevant_ms": 1.122,
-    "synonym_expanded_mean_first_relevant_rank": 1,
-    "synonym_expanded_mean_time_to_first_relevant_ms": 1.489
-  }
+  ]
 }

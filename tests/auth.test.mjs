@@ -48,7 +48,7 @@ test('first administrator, sign-in, CSRF, roles and lockout', async (t) => {
   const auditor = env.client();
   await auditor.login('aud@x.org', 'auditor password 1');
   assert.equal((await auditor.get('/api/audit')).status, 200);
-  assert.equal((await auditor.post('/api/searches/plan', { requestText: 'road closure records', mode: 'demo' })).status, 403, 'auditors cannot search');
+  assert.equal((await auditor.post('/api/requests', { text: 'road closure records', receivedAt: '2026-10-30', mode: 'demo' })).status, 403, 'auditors cannot search');
 
   // Disabling a user ends their sessions immediately.
   const users = (await admin.get('/api/users')).data.data;
@@ -94,10 +94,39 @@ test('static files: only allowlisted files are served, with security headers', a
   for (const p of ['/server/app.mjs', '/package.json', '/data/records.db', '/.env', '/client/../server/app.mjs']) assert.equal((await c.get(p)).status, 404, p);
 });
 
-test('DEMO_ONLY switches off every real-data endpoint', async (t) => {
-  const env = await startApp({ DEMO_ONLY: 'true' });
+test('A1: with real sources off (the hosted demo), nothing real can be connected and the UI cannot turn it on', async (t) => {
+  const env = await startApp({ REAL_SOURCES: 'false' });
   t.after(() => env.close());
   const c = env.client();
-  assert.equal((await c.get('/api/auth/status')).data.data.demoOnly, true);
-  assert.equal((await c.post('/api/auth/login', { email: 'a@b.c', password: 'x' })).status, 404);
+  const st = (await c.get('/api/auth/status')).data.data;
+  assert.equal(st.realSources, false); assert.equal(st.demoAccounts, true); assert.equal(st.setupRequired, false);
+  assert.equal((await c.post('/api/auth/setup', { orgName: 'X', name: 'A', email: 'a@x.org', password: 'correct horse battery' })).status, 403, 'no real accounts on the demo server');
+  const d = await c.post('/api/auth/demo', { role: 'admin' });
+  assert.equal(d.status, 200); c.csrf = d.data.data.csrfToken;
+  const me = (await c.get('/api/auth/status')).data.data.user;
+  assert.equal(me.isDemo, true); assert.equal(me.name, 'Supervisor A');
+  // Real connectors are refused, real mode is never used, and the switch cannot be flipped from the UI.
+  assert.equal((await c.post('/api/connectors/gmail/authorize', { query: '' })).status, 403);
+  assert.equal((await c.post('/api/connectors/database/inspect', { driver: 'sqlite', file: 'x.db' })).status, 403);
+  assert.equal((await c.upload('staff-file.txt', Buffer.from('real staff file'))).status, 403);
+  assert.equal((await c.upload('chat.txt', Buffer.from('x'), '?kind=messages')).status, 403);
+  assert.equal((await c.post('/api/agent-tokens', { name: 'PC', acknowledged: true })).status, 403);
+  assert.equal((await c.put('/api/settings/switches', { realSources: true })).status, 403);
+  assert.equal((await c.put('/api/settings/switches', { phoneLink: true })).status, 403);
+  const req = await c.post('/api/requests', { text: 'road closure records', receivedAt: '2026-10-30', mode: 'real' });
+  assert.equal(req.data.data.mode, 'demo', 'requests on the demo server are always Tier 0');
+  const cat = (await c.get('/api/connectors')).data.data;
+  assert.deepEqual(cat.map(x => x.type).sort(), ['public', 'stub', 'stub', 'stub', 'stub']);
+  // Public documents need provenance.
+  assert.equal((await c.upload('notice.txt', Buffer.from('Public notice about a lane closure.'), '?kind=public')).status, 400);
+  const ok = await c.req('POST', '/api/uploads?kind=public', Buffer.from('Public notice about a lane closure on Main Street.'), { 'x-file-name': 'notice.txt', 'content-type': 'text/plain', 'x-source-url': 'https://example.org/notice', 'x-retrieved-at': '2026-10-29', 'x-terms-checked': 'yes' });
+  assert.equal(ok.status, 201, JSON.stringify(ok.data));
+  const rec = (await c.get(`/api/records/${ok.data.data.recordId}`)).data.data;
+  assert.equal(rec.entities.provenance.url, 'https://example.org/notice');
+  assert.equal(rec.entities.provenance.retrievedAt, '2026-10-29');
+  // Two visitors get separate demo workspaces.
+  const other = env.client();
+  const d2 = await other.post('/api/auth/demo', { role: 'records_officer' });
+  assert.equal(d2.status, 200);
+  assert.equal((await other.get(`/api/requests/${req.data.data.id}`)).status, 404);
 });

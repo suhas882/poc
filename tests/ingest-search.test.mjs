@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
-import { makeDocx, makePdf, makeXlsx, startApp } from './helpers.mjs';
+import { makeDocx, makePdf, makeXlsx, searchReq, startApp } from './helpers.mjs';
 import { chunkText, extractEntities } from '../server/ingest/pipeline.mjs';
 import { parseWhatsAppTxt } from '../server/ingest/messages.mjs';
 import { ftsQuery } from '../server/search/hybrid.mjs';
@@ -10,12 +10,9 @@ import { parseDateRange, rulesPlan } from '../server/ai/planner.mjs';
 const plan = (p) => ({ keywords: [], alternateTerms: [], phrases: [], people: [], organizations: [], locations: [], dateFrom: null, dateTo: null, departments: [], recordTypes: [], sourceIds: [], exclusions: [], ...p });
 
 async function search(c, requestText, edits = {}, mode = 'real') {
-  const p = await c.post('/api/searches/plan', { requestText, mode });
-  assert.equal(p.status, 201, JSON.stringify(p.data));
-  const run = await c.post(`/api/searches/${p.data.data.searchId}/run`, { plan: { ...p.data.data.plan, ...edits }, confirmed: true });
-  assert.equal(run.status, 200, JSON.stringify(run.data));
-  const res = await c.get(`/api/searches/${p.data.data.searchId}/results?pageSize=100`);
-  return { id: p.data.data.searchId, plan: p.data.data.plan, origin: p.data.data.origin, run: run.data.data, results: res.data.data, meta: res.data.meta };
+  const s = await searchReq(c, requestText, { edits, mode });
+  assert.equal(s.runStatus, 200, JSON.stringify(s.runError || s.confirm?.data || s.create?.data));
+  return s;
 }
 
 test('uploads: PDF, DOCX, XLSX, CSV, TXT are extracted and searchable; bad files are rejected', async (t) => {
@@ -113,11 +110,13 @@ test('access control: owner-only sources, role sharing, tenant isolation, synthe
   const recId = r.data.data.recordId, srcId = r.data.data.sourceId;
 
   // Not shared: reviewer and admin cannot find or open it.
-  let s = await search(reviewer, 'Cedar Avenue settlement');
-  assert(!s.results.some(x => x.record.id === recId));
+  // With nothing shared, there is no source to search: confirming says so instead of silently returning nothing.
+  let s = await searchReq(reviewer, 'Cedar Avenue settlement');
+  assert.equal(s.confirmStatus, 400);
+  assert.equal(s.confirm.data.error.code, 'no_sources');
   assert.equal((await reviewer.get(`/api/records/${recId}`)).status, 404);
-  s = await search(admin, 'Cedar Avenue settlement');
-  assert(!s.results.some(x => x.record.id === recId), 'even administrators only see what is shared with them');
+  s = await searchReq(admin, 'Cedar Avenue settlement');
+  assert(s.confirmStatus === 400 || !s.results.some(x => x.record.id === recId), 'even supervisors only see what is shared with them');
   assert.equal((await reviewer.patch(`/api/sources/${srcId}`, { visibility: 'roles' })).status, 403, 'only the owner or an admin can change sharing');
 
   // Shared with reviewers.
@@ -129,9 +128,9 @@ test('access control: owner-only sources, role sharing, tenant isolation, synthe
 
   // Un-sharing applies to existing result lists immediately.
   await officer.patch(`/api/sources/${srcId}`, { visibility: 'owner' });
-  const again = await reviewer.get(`/api/searches/${s.id}/results`);
+  const again = await reviewer.get(`/api/requests/${s.id}/results`);
   assert(!again.data.data.some(x => x.record.id === recId));
-  assert.equal((await reviewer.put(`/api/searches/${s.id}/evaluations/${recId}`, { judgment: 'relevant' })).status, 404);
+  assert.equal((await reviewer.put(`/api/requests/${s.id}/marks/${recId}`, { mark: 'relevant' })).status, 404);
 
   // Another tenant can never see it, even with sharing to all roles.
   await officer.patch(`/api/sources/${srcId}`, { visibility: 'roles', allowedRoles: [] });
@@ -141,7 +140,7 @@ test('access control: owner-only sources, role sharing, tenant isolation, synthe
   db.run("INSERT INTO users (id, tenant_id, email, name, role, password_hash) VALUES ('u2', 't2', 'z@other.org', 'Zed', 'admin', ?)", hashPassword('other tenant password'));
   const other = env.client(); await other.login('z@other.org', 'other tenant password');
   assert.equal((await other.get(`/api/records/${recId}`)).status, 404);
-  assert.equal((await other.get(`/api/searches/${s.id}`)).status, 404);
+  assert.equal((await other.get(`/api/requests/${s.id}`)).status, 404);
   assert(!(await other.get('/api/sources')).data.data.some(x => x.id === srcId));
   assert.equal((await other.del(`/api/sources/${srcId}`)).status, 404);
 
@@ -152,10 +151,9 @@ test('access control: owner-only sources, role sharing, tenant isolation, synthe
   assert(demo.results.length > 0 && demo.results.every(x => x.record.isSynthetic));
   assert(!demo.results.some(x => x.record.id === recId));
 
-  // History: own vs all.
-  assert.equal((await reviewer.get('/api/searches?scope=all')).status, 403);
-  const mine = (await reviewer.get('/api/searches')).data.data;
-  assert(mine.every(x => x.user.name === 'Rae Reviewer'));
+  // Requests are team work inside one organization, never across organizations.
+  assert((await reviewer.get('/api/requests')).data.data.length >= 1);
+  assert.equal((await other.get('/api/requests')).data.data.length, 0);
 });
 
 test('demo mode on the server reproduces the synthetic benchmark behaviour', async (t) => {
@@ -169,9 +167,9 @@ test('demo mode on the server reproduces the synthetic benchmark behaviour', asy
   const relevant = new Set(['R-001', 'R-002', 'R-005', 'R-008', 'R-009', 'R-011', 'R-018']);
   const top10 = s.results.slice(0, 10).map(x => x.record.sourceRecordId);
   assert(top10.filter(id => relevant.has(id)).length >= 5, top10.join(','));
-  assert(s.results.some(x => x.matchType === 'alternate'), 'some records match only through alternate wording');
-  const grouped = await c.get(`/api/searches/${s.id}/results?group=1&pageSize=100`);
-  assert(grouped.data.meta.total < s.meta.total, 'the Cedar Avenue thread collapses into one group');
+  assert(s.results.some(x => ['alternate', 'meaning'].includes(x.matchType)), 'some records match only through related wording');
+  assert(s.results.filter(x => x.groupKey === 'thread:synthetic:cedar-detour-thread').length === 3, 'the email thread is grouped');
+  assert(s.results.every(x => x.why && x.snippet), 'every result has a reason and a passage');
 });
 
 test('semantic search with an embedding provider labels meaning-only matches', async (t) => {
@@ -189,7 +187,6 @@ test('semantic search with an embedding provider labels meaning-only matches', a
   assert(hit, JSON.stringify(s.results.map(x => x.record.title)));
   assert.equal(hit.matchType, 'semantic');
   assert(hit.similarity > 0.5);
-  assert.equal(s.run.stats.semanticStatus, 'on');
 });
 
 test('export: CSV is audited and spreadsheet formulas are neutralised', async (t) => {
@@ -199,7 +196,7 @@ test('export: CSV is audited and spreadsheet formulas are neutralised', async (t
   await c.setup();
   await c.upload('order.docx', makeDocx(['Cedar Avenue closure order number 7'], { title: '=HYPERLINK(evil)' }));
   const s = await search(c, 'Cedar Avenue closure order');
-  const r = await c.get(`/api/searches/${s.id}/export?format=csv`);
+  const r = await c.get(`/api/requests/${s.id}/export/candidates.csv`);
   assert.equal(r.status, 200);
   assert(!/,"=HYPERLINK/.test(r.data), 'formula cells are prefixed');
   assert(/"'=HYPERLINK/.test(r.data));

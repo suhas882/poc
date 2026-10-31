@@ -7,12 +7,31 @@ async function main() {
   const root = $('#login-root')!;
   const status = await authStatus();
   if (status.user) { location.replace(next); return; }
-  if (status.demoOnly) {
-    replace(root, h('h1', null, 'Demo only'), h('p', null, status.offline ? 'The server could not be reached, so only the synthetic demo is available.' : 'This server runs the synthetic demo only. Sign-in and real data are switched off.'), h('a', { class: 'button primary link-button', href: '/' }, 'Open the demo'));
-    return;
-  }
+  if (status.offline) { replace(root, h('h1', null, 'The server could not be reached'), h('p', null, 'Check that the server is running, then reload this page.')); return; }
+  if (status.demoAccounts) return demoForm(root);
   if (status.setupRequired) return setupForm(root);
   loginForm(root);
+}
+
+const DEMO_ROLES: [string, string, string][] = [
+  ['records_officer', 'Clerk', 'Log a request, edit and confirm the plan, review results, hand off.'],
+  ['reviewer', 'Records Coordinator', 'Search and mark candidates routed to a department.'],
+  ['admin', 'Supervisor', 'Everything, plus settings, city packs and second-person approval.'],
+  ['auditor', 'Auditor', 'Read search history and the tamper-evident audit log.']];
+
+function demoForm(root: HTMLElement) {
+  const out = h('div');
+  replace(root,
+    h('div', { class: 'brand-row' }, h('span', { class: 'brand-mark', 'aria-hidden': 'true' }, 'B'), h('div', null, h('h1', null, 'Public Records Search'), h('p', { class: 'helper' }, 'City Clerk staff workspace \u00B7 proof of concept'))),
+    h('p', { class: 'banner info' }, 'Tier 0 demo. Every request and record here is invented, or an openly published document. Real sources are off on this server.'),
+    h('h2', { class: 'card-title' }, 'Try it as'),
+    h('div', { class: 'role-grid' }, DEMO_ROLES.map(([role, label, text]) => h('button', { type: 'button', class: 'button secondary', on: { click: async (e: Event) => {
+      try { await busy(e.currentTarget as HTMLButtonElement, 'Starting\u2026', () => post('/api/auth/demo', { role })); location.replace(next); }
+      catch (err) { replace(out, alertBox(err instanceof ApiError ? err.message : 'Could not start the demo.')); }
+    } } }, h('b', null, label), h('small', null, text)))),
+    out,
+    h('p', { class: 'hint' }, 'Each visitor gets a private demo workspace with invented accounts. It is removed after three days. You can switch roles from the sidebar.'),
+    h('p', { class: 'hint' }, 'Staff decide. The tool finds, ranks and logs. WCAG 2.1 AA-aligned interface.'));
 }
 
 function loginForm(root: HTMLElement) {
@@ -44,7 +63,7 @@ function setupForm(root: HTMLElement) {
   const token = h('input', { autocomplete: 'off' }) as HTMLInputElement;
   const btn = h('button', { type: 'submit', class: 'button primary' }, 'Create administrator');
   const out = h('div');
-  const form = h('form', { novalidate: true }, h('h1', null, 'Create the first administrator'),
+  const form = h('form', { novalidate: true }, h('h1', null, 'Create the first supervisor account'),
     h('p', { class: 'helper' }, 'No accounts exist yet. This form only works from the server’s own computer (localhost), or with the SETUP_TOKEN configured on the server.'),
     field('Organization name', org), field('Your name', name), field('Email', email), field('Password', pw, 'At least 12 characters.'),
     h('details', null, h('summary', null, 'Setting up from another computer?'), field('Setup token', token, 'The SETUP_TOKEN value from the server’s environment.')),

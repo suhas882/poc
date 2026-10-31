@@ -1,21 +1,28 @@
-import { ApiError, can, del, get, patch, post, uploadFile, type AuthStatus } from '../api.js';
+import { api, ApiError, can, del, get, patch, post, uploadFile, type AuthStatus } from '../api.js';
 import { initShell } from '../shell.js';
 import { $, alertBox, busy, empty, field, fmtBytes, fmtDate, fmtNum, h, openDialog, replace, ROLE_LABEL, toast } from '../ui.js';
 
-interface Source { id: string; type: string; name: string; status: string; accountLabel: string | null; owner: { id: string; name: string } | null; isOwner: boolean; canManage: boolean; visibility: 'owner' | 'roles'; allowedRoles: string[]; scopes: string[]; driver: string | null; provider?: string | null; repositories: { name: string; kind: string; columns?: string[] }[]; recordCount: number; duplicateCount: number; lastSyncAt: string | null; lastSyncStatus: string | null; lastError: string | null; isSynthetic: boolean }
-interface Connector { type: string; driver?: string; name: string; description: string; permissions: string[]; status: 'available' | 'needs_configuration' | 'planned'; reason?: string; note?: string }
+interface Source { id: string; type: string; name: string; status: string; accountLabel: string | null; owner: { id: string; name: string } | null; isOwner: boolean; canManage: boolean; visibility: 'owner' | 'roles'; allowedRoles: string[]; scopes: string[]; driver: string | null; provider?: string | null; repositories: { name: string; kind: string; columns?: string[] }[]; recordCount: number; duplicateCount: number; lastSyncAt: string | null; lastSyncStatus: string | null; lastError: string | null; isSynthetic: boolean; publicDocs?: boolean; experimental?: boolean }
+interface Connector { type: string; driver?: string; name: string; description: string; permissions: string[]; status: 'available' | 'needs_configuration' | 'planned' | 'not_connected'; reason?: string; note?: string; local?: boolean; experimental?: boolean; key?: string }
 interface SystemStatus { ai: { configured: boolean; model: string | null }; embeddings: { configured: boolean; provider: string | null; model: string | null; error: string | null }; gmail: { configured: boolean; redirectUri: string }; encryption: { configured: boolean; source: string }; ocr: { enabled: boolean; installed: boolean }; limits: { uploadMaxBytes: number } }
 
 const ROLES = ['admin', 'records_officer', 'reviewer', 'auditor'];
 const STATUS_LABEL: Record<string, string> = { connected: 'Connected', syncing: 'Synchronizing', needs_attention: 'Needs attention', disconnected: 'Disconnected' };
-const ICON: Record<string, string> = { phonelink: '✆', gmail: '✉', uploads: '⇪', messages: '✆', database: '⛁', synthetic: '◇', google_drive: '△', onedrive: '☁', sharepoint: '▦', outlook: '✉' };
+const ICON: Record<string, string> = { public: 'P', stub: '\u25CC', phonelink: '✆', gmail: '✉', uploads: '⇪', messages: '✆', database: '⛁', synthetic: '◇', google_drive: '△', onedrive: '☁', sharepoint: '▦', outlook: '✉' };
 let status: AuthStatus;
 let sys: SystemStatus | null = null;
 let pollTimer = 0;
 
 async function main() {
-  status = await initShell({ realOnly: true });
-  if (!status.user) return;
+  status = await initShell({ title: 'Connected Sources' });
+  replace($('#root')!,
+    h('div', { class: 'banner info', role: 'note' }, h('span', { 'aria-hidden': 'true' }, '\u2139'), h('span', null, 'Every source is read-only. The tool never writes to, sends from, or deletes in a source system.')),
+    h('div', { id: 'flash' }),
+    h('div', { class: 'tiles', id: 'system-status' }),
+    h('section', { class: 'card', 'aria-labelledby': 'cs-h' }, h('div', { class: 'card-heading' }, h('h2', { id: 'cs-h' }, 'Connected sources'), h('span', { class: 'micro', id: 'source-count' })), h('div', { class: 'grid-cards', id: 'source-list' })),
+    h('section', { class: 'card', 'aria-labelledby': 'as-h' }, h('div', { class: 'card-heading' }, h('h2', { id: 'as-h' }, 'Add or request a source')), h('div', { class: 'grid-cards', id: 'connector-list' })),
+    h('section', { class: 'card', id: 'known-gaps', 'aria-labelledby': 'kg-h' }, h('h2', { id: 'kg-h' }, 'Known gaps'), h('p', { class: 'helper' }, 'Loading\u2026')));
+  loadGaps();
   const q = new URLSearchParams(location.search);
   if (q.get('connected')) replace($('#flash')!, alertBox('Gmail is connected. The first synchronization has started; it can take a few minutes for a large mailbox.', 'ok'));
   if (q.get('error')) replace($('#flash')!, alertBox(q.get('error')!.slice(0, 300)));
@@ -27,12 +34,49 @@ async function main() {
 
 function renderStatus() {
   if (!sys) return;
-  const item = (label: string, ok: boolean, text: string) => h('div', { class: `status-item ${ok ? 'is-ok' : 'is-off'}` }, h('span', { class: 'dot', 'aria-hidden': 'true' }), h('b', null, label), h('span', null, text));
+  const item = (label: string, ok: boolean, text: string) => h('div', { class: 'tile' }, h('span', null, label), h('p', null, h('span', { class: `pill ${ok ? 'ok' : 'gray'}` }, ok ? 'On' : 'Off'), ' ', text));
   replace($('#system-status')!,
-    item('Claude', sys.ai.configured, sys.ai.configured ? `On · ${sys.ai.model}` : 'Off · plans use local rules'),
-    item('Semantic search', sys.embeddings.configured, sys.embeddings.configured ? `On · ${sys.embeddings.model}` : sys.embeddings.error ? `Error · ${sys.embeddings.error}` : 'Off · keyword search only'),
-    item('Credential encryption', sys.encryption.configured, sys.encryption.configured ? (sys.encryption.source === 'environment' ? 'On' : 'On · development key') : 'Missing key'),
-    item('OCR', sys.ocr.enabled && sys.ocr.installed, sys.ocr.enabled && sys.ocr.installed ? 'Available' : 'Unavailable'));
+    item('AI plan drafts', sys.ai.configured, sys.ai.configured ? `${sys.ai.model}. Sees request text and plans only.` : 'Local rules draft plans.'),
+    item('Meaning matching', true, 'Related wording from the city pack, matched on this server.'),
+    item('Real sources', Boolean(status.realSources), status.realSources ? 'Allowed on this server.' : 'Off. Tier 0 data only.'),
+    item('OCR for scans', sys.ocr.enabled && sys.ocr.installed, sys.ocr.enabled && sys.ocr.installed ? 'Available.' : 'Not installed.'));
+}
+
+async function loadGaps() {
+  const wf = await get<{ pack: { knownGaps: string[]; name: string } }>('/api/settings/workflow').then(r => r.data).catch(() => null);
+  if (!wf) return;
+  replace($('#known-gaps')!, h('h2', { id: 'kg-h' }, 'Known gaps'), h('ul', { class: 'plain-list' }, wf.pack.knownGaps.map(g => h('li', null, g))),
+    h('p', { class: 'hint' }, 'This text is copied into every search record.'));
+}
+
+function publicDocDialog() {
+  const url = h('input', { type: 'url', id: 'pd-url', placeholder: 'https://' }) as HTMLInputElement;
+  const date = h('input', { type: 'date', id: 'pd-date' }) as HTMLInputElement;
+  const terms = h('input', { type: 'checkbox' }) as HTMLInputElement;
+  const file = h('input', { type: 'file', id: 'pd-file', accept: '.pdf,.docx,.xlsx,.csv,.txt,.md' }) as HTMLInputElement;
+  const go = h('button', { type: 'button', class: 'button primary' }, 'Add document');
+  const out = h('div');
+  const dlg = openDialog('Add a public document', h('div', null,
+    h('p', { class: 'helper' }, 'Only openly published documents belong here (Tier 0). Record where each file came from.'),
+    field('File', file), field('Public web address it came from', url), field('Date you downloaded it', date),
+    h('label', { class: 'inline-check consent-ack' }, terms, 'I checked that the site\u2019s terms of use allow this use.'), out, h('div', { class: 'form-row' }, go)));
+  go.addEventListener('click', async () => {
+    replace(out);
+    const f = file.files?.[0];
+    if (!f) { replace(out, alertBox('Choose a file.')); return; }
+    try {
+      const res = await busy(go, 'Adding\u2026', () => api('POST', '/api/uploads?kind=public', undefined, { raw: f, headers: { 'x-file-name': encodeURIComponent(f.name), 'content-type': f.type || 'application/octet-stream', 'x-source-url': url.value.trim(), 'x-retrieved-at': date.value, 'x-terms-checked': terms.checked ? 'yes' : 'no' } }));
+      void res; toast('Document added with its provenance'); dlg.close(); loadSources();
+    } catch (e) { replace(out, alertBox(e instanceof ApiError ? e.message : 'Could not add the document.')); }
+  });
+}
+
+function requestAccess(c: Connector) {
+  openDialog(`${c.name}: not connected`, h('div', null,
+    h('p', null, c.description), c.note ? h('p', { class: 'hint' }, c.note) : null,
+    h('h3', null, 'To connect it later'),
+    h('ol', { class: 'guide-steps' }, h('li', null, 'City IT grants read-only access scoped to named sites or mailboxes.'), h('li', null, 'The connector is built against that access and tested on Tier 1 data first.'), h('li', null, 'Until then, every search lists this source as NOT searched.')),
+    h('p', { class: 'hint' }, 'This page does not send a request to anyone. Ask city IT directly.')));
 }
 
 async function loadSources() {
@@ -40,10 +84,8 @@ async function loadSources() {
   let sources: Source[];
   try { sources = (await get<Source[]>('/api/sources')).data; }
   catch (e) { replace(list, alertBox(e instanceof ApiError ? e.message : 'Sources could not be loaded.')); return; }
-  const real = sources.filter(s => !s.isSynthetic);
-  $('#source-count')!.textContent = `${real.length} CONNECTED · ${fmtNum(real.reduce((a, s) => a + s.recordCount, 0))} RECORDS`;
-  replace(list, ...(real.length ? real.map(sourceCard) : [empty('No sources yet', 'Add one below. Until then, Real data searches have nothing to look through.')]),
-    ...sources.filter(s => s.isSynthetic).map(sourceCard));
+  $('#source-count')!.textContent = `${sources.length} CONNECTED \u00B7 ${fmtNum(sources.reduce((a, s) => a + s.recordCount, 0))} RECORDS`;
+  replace(list, ...(sources.length ? sources.map(sourceCard) : [empty('No sources yet', 'Add one below.')]));
   clearTimeout(pollTimer);
   if (sources.some(s => s.status === 'syncing')) pollTimer = window.setTimeout(loadSources, 2500);
 }
@@ -64,11 +106,12 @@ function sourceCard(s: Source) {
       s.scopes.length ? [h('dt', null, 'Access granted'), h('dd', null, h('ul', { class: 'plain-list' }, s.scopes.map(x => h('li', null, h('code', null, x)))))] : null,
       s.repositories.length ? [h('dt', null, s.type === 'database' ? 'Tables' : 'Scope'), h('dd', null, s.repositories.map(r => r.name).join(', '))] : null),
     s.lastError ? alertBox(s.lastError, 'error', s.type === 'gmail' && s.canManage ? h('button', { type: 'button', class: 'button secondary', on: { click: () => startGmail() } }, 'Reconnect Gmail') : undefined) : null,
-    s.isSynthetic ? h('p', { class: 'helper' }, 'Invented records used only in Demo mode searches. They never appear in Real data results.') : null);
+    s.isSynthetic ? h('p', { class: 'helper' }, 'Invented records for Tier 0 demo searches. They never appear in real-source results.') : s.publicDocs ? h('p', { class: 'helper' }, 'Openly published documents. Each one keeps its web address and retrieval date.') : null,
+    s.experimental ? h('p', null, h('span', { class: 'pill warn' }, 'Experimental'), ' ', h('a', { href: '/phone-review.html' }, 'Review your matches')) : null);
 
   if (s.canManage) {
     const actions = h('div', { class: 'card-actions' });
-    const phone = s.provider === 'phonelink';
+    const phone = s.provider === 'phonelink', helper = s.provider === 'phonelink-agent';
     if (s.type === 'gmail' || s.type === 'database' || phone) {
       actions.append(h('button', { type: 'button', class: 'button primary', disabled: s.status === 'syncing', on: { click: async (e: Event) => {
         try { await busy(e.currentTarget as HTMLButtonElement, 'Starting…', () => post(`/api/sources/${s.id}/sync`)); toast('Synchronization started'); loadSources(); }
@@ -76,8 +119,9 @@ function sourceCard(s: Source) {
       } } }, s.status === 'syncing' ? 'Synchronizing…' : 'Sync now'));
       actions.append(h('button', { type: 'button', class: 'button secondary', on: { click: () => showJobs(s) } }, 'Sync history'));
     }
-    if (phone) actions.append(h('button', { type: 'button', class: 'button secondary', on: { click: () => showRecords(s) } }, 'View conversations'));
-    if ((s.type === 'uploads' || s.type === 'messages') && !phone) {
+    if (phone || helper) actions.append(h('button', { type: 'button', class: 'button secondary', on: { click: () => showRecords(s) } }, 'View conversations'));
+    if (helper) actions.append(h('button', { type: 'button', class: 'button secondary', on: { click: () => syncHelper() } }, 'Helper keys'));
+    if ((s.type === 'uploads' || s.type === 'messages') && !phone && !helper) {
       actions.append(fileButton(s.type === 'uploads' ? 'Upload more files' : 'Import more messages', s.type, s.id));
       actions.append(h('button', { type: 'button', class: 'button secondary', on: { click: () => showRecords(s) } }, 'Manage files'));
     }
@@ -95,16 +139,20 @@ async function loadConnectors() {
   const manage = can(status, 'sources.manage'), upload = can(status, 'uploads.create');
   replace($('#connector-list')!, ...list.map(c => {
     let action: Node | null = null;
-    if (c.status === 'planned') action = h('span', { class: 'status-pill st-planned' }, 'Planned');
+    if (c.status === 'not_connected') action = h('div', { class: 'card-actions' }, h('span', { class: 'pill bad' }, '\u2715 Not connected'), h('button', { type: 'button', class: 'button small secondary', on: { click: () => requestAccess(c) } }, 'Request access'));
+    else if (c.type === 'public') action = upload ? h('button', { type: 'button', class: 'button primary', on: { click: publicDocDialog } }, 'Add public document') : h('p', { class: 'helper' }, 'Your role cannot add documents.');
+    else if (c.status === 'planned') action = h('span', { class: 'status-pill st-planned' }, 'Planned');
     else if (c.status === 'needs_configuration') action = h('p', { class: 'helper' }, c.reason || 'Needs configuration.');
-    else if (c.type === 'phonelink' && manage) action = h('button', { type: 'button', class: 'button primary', on: { click: () => phoneLink() } }, 'Check this PC');
+    else if (c.type === 'phonelink' && manage) action = h('div', { class: 'card-actions' },
+      c.local ? h('button', { type: 'button', class: 'button primary', on: { click: () => phoneLink() } }, 'Check this PC') : null,
+      h('button', { type: 'button', class: c.local ? 'button secondary' : 'button primary', on: { click: () => syncHelper() } }, 'PC sync helper'));
     else if (c.type === 'gmail' && manage) action = h('button', { type: 'button', class: 'button primary', on: { click: () => startGmail() } }, 'Connect Gmail');
     else if (c.type === 'uploads' && upload) action = fileButton('Choose files', 'uploads');
     else if (c.type === 'messages' && upload) action = h('div', { class: 'card-actions' }, fileButton('Choose export files', 'messages'), h('button', { type: 'button', class: 'button secondary', on: { click: exportGuide } }, 'How to export messages'));
     else if (c.type === 'database' && manage) action = h('button', { type: 'button', class: 'button primary', on: { click: () => dbWizard(c.driver!) } }, `Connect ${c.name}`);
     else action = h('p', { class: 'helper' }, 'Your role can’t add sources.');
     return h('div', { class: `connector-card is-${c.status}` },
-      h('div', { class: 'source-head' }, h('span', { class: 'source-icon', 'aria-hidden': 'true' }, ICON[c.type] || '•'), h('h3', null, c.name)),
+      h('div', { class: 'source-head' }, h('span', { class: 'source-icon', 'aria-hidden': 'true' }, ICON[c.type] || '•'), h('h3', null, c.name), c.experimental ? h('span', { class: 'pill warn' }, 'Experimental') : null),
       h('p', null, c.description),
       c.permissions.length ? h('p', { class: 'helper' }, h('b', null, 'Access: '), c.permissions.join('; ')) : null,
       c.note ? h('p', { class: 'helper' }, c.note) : null,
@@ -146,6 +194,66 @@ async function phoneLink() {
       await busy(go, 'Connecting…', () => post('/api/connectors/phonelink/connect', { acknowledged: true }));
       dlg.close?.(); toast('Phone Link connected. Indexing your texts…'); location.reload();
     } catch (e) { replace(out, alertBox(e instanceof ApiError ? e.message : 'Could not connect.')); }
+  });
+}
+
+/* ---------------- PC sync helper: texts from a Windows PC to a hosted server ---------------- */
+interface HelperKey { id: string; name: string; createdAt: string; lastUsedAt: string | null; revokedAt: string | null; sourceName: string | null; records: number }
+
+async function syncHelper() {
+  const body = h('div', { class: 'consent' });
+  openDialog('PC sync helper for Android texts', body, { wide: true });
+  const list = h('div');
+  const name = h('input', { value: 'My PC', maxlength: 60 }) as HTMLInputElement;
+  name.value = 'My PC';
+  const ack = h('input', { type: 'checkbox' }) as HTMLInputElement;
+  const create = h('button', { type: 'button', class: 'button primary' }, 'Create helper key');
+  const out = h('div');
+  replace(body,
+    h('p', null, 'This website runs on a server, so it cannot read files on your PC. The helper is a small program on your Windows PC that reads the texts Phone Link keeps there and sends new ones here every few minutes, over HTTPS. No exporting.'),
+    h('ul', null,
+      h('li', null, 'It only reads Phone Link’s copy of your texts. Nothing on your phone is changed.'),
+      h('li', null, 'Its key can only add texts to your own private source. It cannot search or read anything here.'),
+      h('li', null, 'Your PC must be on, with Phone Link running, for new texts to arrive. Revoke the key at any time to stop it.')),
+    list,
+    h('h3', null, 'Create a key'),
+    field('Name for this PC', name),
+    h('label', { class: 'inline-check consent-ack' }, ack, 'These are my own texts (or I am authorized to index them) and I want them sent to this site.'),
+    out, h('div', { class: 'form-row' }, create));
+  const loadKeys = async () => {
+    try {
+      const keys = (await get<HelperKey[]>('/api/agent-tokens')).data;
+      replace(list, keys.length ? h('div', null, h('h3', null, 'Your helper keys'), h('table', { class: 'data-table' },
+        h('thead', null, h('tr', null, h('th', null, 'PC'), h('th', null, 'Texts indexed'), h('th', null, 'Last contact'), h('th', null, ''))),
+        h('tbody', null, keys.map(k => h('tr', null, h('td', null, k.name), h('td', null, fmtNum(k.records)),
+          h('td', null, k.revokedAt ? 'Revoked' : k.lastUsedAt ? fmtDate(k.lastUsedAt, true) : 'Never'),
+          h('td', null, k.revokedAt ? null : h('button', { type: 'button', class: 'button danger small', on: { click: async () => {
+            if (!confirm(`Revoke the key for ${k.name}? The helper on that PC stops sending texts. Texts already here stay until you remove the source.`)) return;
+            try { await del(`/api/agent-tokens/${k.id}`); toast('Key revoked'); loadKeys(); } catch (e) { toast(e instanceof ApiError ? e.message : 'Could not revoke.', 'error'); }
+          } } }, 'Revoke'))))))) : null);
+    } catch { replace(list); }
+  };
+  loadKeys();
+  create.addEventListener('click', async () => {
+    replace(out);
+    if (!ack.checked) { replace(out, alertBox('Tick the box to confirm.')); return; }
+    try {
+      const res = await busy(create, 'Creating…', () => post<{ token: string }>('/api/agent-tokens', { name: name.value.trim() || 'My PC', acknowledged: true }));
+      const keyBox = h('input', { readonly: true, value: res.data.token, class: 'mono-input' }) as HTMLInputElement;
+      keyBox.value = res.data.token;
+      const copy = h('button', { type: 'button', class: 'button secondary', on: { click: async () => { try { await navigator.clipboard.writeText(res.data.token); toast('Key copied'); } catch { keyBox.select(); } } } }, 'Copy key');
+      replace(out, alertBox('Key created. Copy it now: it is shown only once.', 'ok'),
+        h('div', { class: 'form-row' }, keyBox, copy),
+        h('h3', null, 'Set up the helper on your Windows PC'),
+        h('ol', { class: 'guide-steps' },
+          h('li', null, 'Make sure Phone Link is set up and your texts appear in its Messages tab.'),
+          h('li', null, 'On that PC, open the project folder (the one with start.bat) and double-click ', h('b', null, 'phonelink-sync.bat'), '.'),
+          h('li', null, 'When asked, paste this website’s address: ', h('code', null, location.origin), '.'),
+          h('li', null, 'Paste the key above. The helper sends your texts and then keeps checking for new ones.'),
+          h('li', null, 'To start it automatically, press Win+R, type ', h('code', null, 'shell:startup'), ', and put a shortcut to phonelink-sync.bat in that folder.')));
+      create.hidden = true;
+      loadKeys(); loadSources();
+    } catch (e) { replace(out, alertBox(e instanceof ApiError ? e.message : 'Could not create the key.')); }
   });
 }
 

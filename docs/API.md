@@ -71,3 +71,8 @@ Every change is written to the audit log (`consent.granted`, `consent.changed`, 
 - `GET /api/connectors/phonelink/check`: whether Phone Link's file was found, which table and columns were recognized, and message and conversation counts with the date range. Requires `sources.manage` and a request from localhost.
 - `POST /api/connectors/phonelink/connect` with `{ acknowledged: true }`: creates a private `messages` source with `config.provider = "phonelink"` and starts the first sync.
 - `POST /api/sources/:id/sync` re-reads Phone Link. Searches also refresh it automatically when the file has changed.
+
+## PC sync helper
+
+- `GET/POST /api/agent-tokens` and `DELETE /api/agent-tokens/:id` (signed in, `sources.manage`): list, create (`{ name, acknowledged: true }`, which returns the key once and creates a private source) and revoke helper keys.
+- `GET /api/agent/whoami` and `POST /api/agent/messages` (`Authorization: Bearer prs_agent_...`): used by `agent/phonelink-sync.mjs`. The messages body is `{ messages: [{ conversation, from, to, at, body }] }`, at most 2000 per request. Each conversation-day sent replaces the stored copy of that day.

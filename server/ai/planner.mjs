@@ -7,6 +7,9 @@
  */
 import { AiError } from './provider.mjs';
 
+/** Logged with every plan and search so a run can be reproduced. Bump when the prompt or schema changes. */
+export const PROMPT_VERSION = 'plan-v3';
+
 export const SYNONYM_GROUPS = [
   ['road closure', 'street closure', 'lane closure', 'detour', 'traffic control'],
   ['right-of-way work', 'street use', 'temporary street occupancy', 'excavation permit'],
@@ -138,7 +141,7 @@ export async function draftPlan({ provider, requestText, sources, departments, t
 
 /* ---------------- rule-based fallback ---------------- */
 
-const PLAN_STOP = new Set('a an and any all about after are as at be by can could copies copy documents during each every for from have i in including into is it me my need of on or our please provide records record related regarding relating send that the their them these this those to was were what when where which while who with within would you between'.split(' '));
+const PLAN_STOP = new Set('a an and any all about after are as at be by can could copies copy documents during each every for from have i in including into is it me my need of on or our please provide records record related regarding relating send that the their them these this those to was were what when where which while who with within would you between work worked working did done made make get got been being crews staff people anything something things stuff information info files'.split(' '));
 const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
 const MON = '(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)';
 const monthIndex = (m) => MONTHS.findIndex(x => x.startsWith(m.slice(0, 3).toLowerCase()));

@@ -1,33 +1,45 @@
-import { ApiError, can, get } from '../api.js';
+// Screen 6: Search History. A work queue and an archive in one screen.
+import { ApiError, get } from '../api.js';
 import { initShell } from '../shell.js';
-import { $, alertBox, empty, fmtDate, fmtMs, h, pager, replace } from '../ui.js';
-const state = { page: 1, scope: 'mine', mode: '', q: '' };
+import { $, alertBox, deadlinePill, download, empty, fmtDate, fmtNum, h, pager, pill, replace } from '../ui.js';
+const root = $('#root');
+let q = '', status = '', due = '', page = 1;
+let canExport = false;
+const STAGE_PILL = { draft: 'draft', confirmed: 'info', review: 'warn', ready: 'ok', handed_off: 'gray' };
 async function main() {
-    const status = await initShell({ realOnly: true });
-    if (!status.user)
-        return;
-    const canAll = can(status, 'history.read_all');
-    if (!can(status, 'history.read_own') && canAll)
-        state.scope = 'all';
-    const q = h('input', { type: 'search', placeholder: 'Search request text', 'aria-label': 'Search request text' });
-    let t = 0;
-    q.addEventListener('input', () => { clearTimeout(t); t = window.setTimeout(() => { state.q = q.value.trim(); state.page = 1; load(); }, 300); });
-    const mode = h('select', { 'aria-label': 'Mode', on: { change: (e) => { state.mode = e.target.value; state.page = 1; load(); } } }, h('option', { value: '' }, 'Real and demo'), h('option', { value: 'real' }, 'Real data only'), h('option', { value: 'demo' }, 'Demo only'));
-    const scope = canAll ? h('select', { 'aria-label': 'Whose searches', on: { change: (e) => { state.scope = e.target.value; state.page = 1; load(); } } }, ...(can(status, 'history.read_own') ? [h('option', { value: 'mine' }, 'My searches')] : []), h('option', { value: 'all', selected: state.scope === 'all' }, 'Everyone’s searches')) : null;
-    replace($('#h-filters'), h('label', { class: 'filter grow' }, h('span', null, 'Find'), q), h('label', { class: 'filter' }, h('span', null, 'Mode'), mode), scope ? h('label', { class: 'filter' }, h('span', null, 'Scope'), scope) : null);
+    const st = await initShell({ title: 'Search History' });
+    canExport = st.user.permissions.includes('export.create');
+    const search = h('input', { type: 'search', id: 'h-q', placeholder: 'Request text or number' });
+    const stSel = h('select', { id: 'h-status' }, h('option', { value: '' }, 'Any status'), h('option', { value: 'draft' }, 'Draft plan'), h('option', { value: 'confirmed' }, 'Plan confirmed'), h('option', { value: 'review' }, 'In review'), h('option', { value: 'ready' }, 'Ready for report'), h('option', { value: 'handed_off' }, 'Handed off'));
+    const dueSel = h('select', { id: 'h-due' }, h('option', { value: '' }, 'Any due date'), h('option', { value: 'open' }, 'Open requests'), h('option', { value: 'soon' }, 'Due in 0 to 2 days'), h('option', { value: 'late' }, 'Late'));
+    const form = h('form', { class: 'filter-bar', role: 'search' }, h('label', { class: 'visually-hidden', for: 'h-q' }, 'Search requests'), search, h('label', { class: 'visually-hidden', for: 'h-status' }, 'Status'), stSel, h('label', { class: 'visually-hidden', for: 'h-due' }, 'Due'), dueSel, h('button', { type: 'submit', class: 'button small secondary' }, 'Filter'));
+    form.addEventListener('submit', (e) => { e.preventDefault(); q = search.value.trim(); status = stSel.value; due = dueSel.value; page = 1; load(); });
+    replace(root, h('div', { class: 'tiles', id: 'tiles' }), form, h('section', { class: 'card', id: 'list', 'aria-label': 'Requests' }), h('div', { class: 'form-row' }, h('a', { class: 'button primary link-button', href: '/' }, 'New request')));
     load();
 }
 async function load() {
-    const list = $('#h-list');
-    const p = new URLSearchParams({ page: String(state.page), pageSize: '20', ...(state.scope === 'all' ? { scope: 'all' } : {}), ...(state.mode ? { mode: state.mode } : {}), ...(state.q ? { q: state.q } : {}) });
+    const p = new URLSearchParams({ page: String(page), pageSize: '25' });
+    if (q)
+        p.set('q', q);
+    if (status)
+        p.set('status', status);
+    if (due)
+        p.set('due', due);
+    let res;
     try {
-        const res = await get(`/api/searches?${p}`);
-        replace(list, res.data.length ? h('table', { class: 'data-table history-table' }, h('thead', null, h('tr', null, ...['Request', 'When', 'By', 'Mode', 'Results', 'Reviewed', 'Plan', ''].map(x => h('th', { scope: 'col' }, x)))), h('tbody', null, res.data.map(r => h('tr', null, h('td', { class: 'request-cell' }, r.requestText), h('td', null, fmtDate(r.createdAt, true)), h('td', null, r.user.name || '—'), h('td', null, h('span', { class: `mode-chip mode-${r.mode}` }, r.mode === 'demo' ? 'Synthetic' : 'Real')), h('td', null, r.status === 'completed' ? `${r.resultCount} · ${fmtMs(r.durationMs)}` : r.status === 'planned' ? 'Planned, not run' : 'Failed'), h('td', null, r.judged ? `${r.judged} decisions` : '—', r.hasSummary ? ' · summary' : ''), h('td', null, r.planOrigin === 'claude' ? 'Claude' : 'Rules'), h('td', null, r.status === 'completed' ? h('a', { class: 'button secondary link-button small', href: `/search.html?search=${encodeURIComponent(r.id)}` }, 'Open') : h('a', { class: 'button secondary link-button small', href: `/?request=${encodeURIComponent(r.requestText)}` }, 'Plan again'))))))
-            : empty('No searches yet', state.q || state.mode ? 'Nothing matches these filters.' : 'Searches you plan and run appear here.', h('a', { class: 'button primary link-button', href: '/' }, 'Plan a search')));
-        replace($('#h-pager'), pager(res.meta, (pg) => { state.page = pg; load(); }));
+        res = await get(`/api/requests?${p}`);
     }
     catch (e) {
-        replace(list, alertBox(e instanceof ApiError ? e.message : 'History could not be loaded.'));
+        replace($('#list'), alertBox(e instanceof ApiError ? e.message : 'Could not load requests.'));
+        return;
     }
+    const t = res.meta.tiles;
+    replace($('#tiles'), h('div', { class: 'tile' }, h('b', null, String(t.open)), h('span', null, 'Open requests')), h('div', { class: 'tile warn' }, h('b', null, String(t.dueSoon + t.dueToday)), h('span', null, `Due in 0 to 2 days${t.dueToday ? ` (${t.dueToday} today)` : ''}`)), h('div', { class: 'tile late' }, h('b', null, String(t.late)), h('span', null, 'Late')), h('div', { class: 'tile ok' }, h('b', null, String(t.ready)), h('span', null, 'Search records ready')));
+    const rows = res.data;
+    replace($('#list'), rows.length ? h('div', { class: 'table-wrap' }, h('table', { class: 'data-table' }, h('caption', { class: 'visually-hidden' }, 'Requests, newest first'), h('thead', null, h('tr', null, h('th', null, 'Request'), h('th', null, 'Deadline'), h('th', null, 'Status'), h('th', null, 'Review'), h('th', null, 'Results'), h('th', null, 'Sources'), h('th', null, h('span', { class: 'visually-hidden' }, 'Actions')))), h('tbody', null, rows.map(r => {
+        const prog = h('span', { class: 'mini-progress', 'aria-hidden': 'true' }, h('i'));
+        prog.firstChild.style.width = `${r.review.total ? Math.round(100 * r.review.marked / r.review.total) : 0}%`;
+        return h('tr', null, h('td', null, h('a', { href: `/?id=${r.id}` }, h('b', null, r.ref)), r.mode === 'real' ? h('span', null, ' ', pill('teal', 'Real')) : null, h('br'), h('span', { class: 'muted' }, r.text.length > 90 ? `${r.text.slice(0, 90)}…` : r.text), h('br'), h('small', { class: 'muted' }, `${r.createdBy}, ${fmtDate(r.createdAt)}`)), h('td', null, r.stage.key === 'handed_off' ? pill('gray', 'Closed') : deadlinePill(r.clock.label, r.clock.daysLeft), h('br'), h('small', { class: 'muted' }, `Due ${fmtDate(r.clock.dueDate)}`)), h('td', null, pill(STAGE_PILL[r.stage.key] || 'gray', r.stage.label)), h('td', null, prog, `${r.review.marked} of ${r.review.total}`), h('td', { class: 'num' }, r.resultCount == null ? '' : fmtNum(r.resultCount)), h('td', null, r.lastRunAt ? `${r.sourcesSearched} searched` : 'Not searched', r.sourcesNotSearched ? h('span', null, h('br'), h('small', { class: 'muted' }, `${r.sourcesNotSearched} NOT searched`)) : null), h('td', null, h('div', { class: 'chips' }, h('a', { class: 'button small secondary link-button', href: `/report.html?id=${r.id}` }, 'Open'), canExport && r.lastRunAt ? h('button', { type: 'button', class: 'button small quiet', on: { click: () => download(`/api/requests/${r.id}/export/log.csv`) } }, 'CSV') : null, r.lastRunAt ? h('a', { class: 'button small quiet link-button', href: `/report.html?id=${r.id}&print=1`, target: '_blank', rel: 'noopener' }, 'PDF') : null)));
+    })))) : empty('No requests found', q || status || due ? 'Try different filters.' : 'Start a new request on Request & Plan.'), pager(res.meta, (n) => { page = n; load(); }));
 }
 main();

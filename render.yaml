@@ -1,4 +1,4 @@
-# Public preview: the synthetic demo only (DEMO_ONLY=true). Render's free disk is wiped on every
+# Public preview: Tier 0 only. REAL_SOURCES is not set, so real sources stay off and visitors use demo accounts. Render's free disk is wiped on every
 # deploy, so real data mode needs a paid instance with a persistent disk. See docs/SETUP.md.
 services:
   - type: web
@@ -13,3 +13,16 @@ services:
         value: 22.13.0
       - key: DEMO_ONLY
         value: "true"
+
+# To keep real data on Render, the database must live on a persistent disk (paid instance types only).
+# Uncomment the block below, switch "plan" above to a paid type (for example starter), remove DEMO_ONLY,
+# and set DATA_DIR to the disk's mount path. Without a disk, every deploy or restart erases all data.
+#    disk:
+#      name: data
+#      mountPath: /var/data
+#      sizeGB: 1
+#    # envVars:
+#    #   - key: DATA_DIR
+#    #     value: /var/data
+#    #   - key: PUBLIC_URL
+#    #     value: https://your-app.onrender.com
