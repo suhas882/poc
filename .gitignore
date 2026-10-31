@@ -9,3 +9,4 @@ data/
 *.db
 *.db-wal
 *.db-shm
+start-log.txt

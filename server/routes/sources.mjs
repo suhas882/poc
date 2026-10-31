@@ -24,7 +24,7 @@ export function connectorCatalog(s) {
   return [
     { type: 'gmail', name: 'Gmail', description: 'Read-only access to one mailbox through Google sign-in. Attachments in supported formats are indexed too.', permissions: ['Read email messages and attachments (gmail.readonly)'], ...st(s.gmail.configured && s.vault, !s.gmail.configured ? 'An administrator needs to add Google OAuth credentials (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET).' : 'Credential encryption key is missing.') },
     { type: 'uploads', name: 'Document uploads', description: 'Upload PDF, Word, Excel, CSV, text files and images (OCR). On a phone, use the file picker to choose exported files.', permissions: ['Only the files you choose'], status: 'available' },
-    { type: 'phonelink', name: 'Android texts (Phone Link)', description: 'Reads the texts your Android phone already syncs to Windows Phone Link on this PC, with no export. New texts are picked up automatically.', permissions: ['Read Phone Link’s copy of your texts, read-only', 'Nothing is sent from or changed on your phone'], ...st(s.phonelink.available, 'Only works when this app runs on the Windows PC where Phone Link is set up.') },
+    { type: 'phonelink', name: 'Android texts (Phone Link)', description: 'Reads the texts your Android phone already syncs to Windows Phone Link on this PC, with no export. New texts are picked up automatically.', permissions: ['Read Phone Link’s copy of your texts, read-only', 'Nothing is sent from or changed on your phone'], status: 'available', note: s.phonelink.available ? undefined : 'This app does not seem to be running on Windows right now. Use Check this PC to see why.' },
     { type: 'messages', name: 'Message imports', description: 'Import message exports you create yourself: Android SMS Backup & Restore XML, WhatsApp “Export chat” text, or CSV.', permissions: ['Only the export files you choose'], status: 'available', note: 'For Android texts without exporting, use Android texts (Phone Link) above. WhatsApp and iPhone messages still need an export.' },
     { type: 'database', driver: 'postgres', name: 'PostgreSQL', description: 'Read-only, allowlisted tables and columns.', permissions: ['SELECT on allowlisted tables'], ...st(hasModule('pg'), 'The PostgreSQL driver is not installed (npm install pg).') },
     { type: 'database', driver: 'mysql', name: 'MySQL', description: 'Read-only, allowlisted tables and columns.', permissions: ['SELECT on allowlisted tables'], ...st(hasModule('mysql2'), 'The MySQL driver is not installed (npm install mysql2).') },
@@ -149,7 +149,6 @@ export function registerSourceRoutes(router, s) {
   /* ---- Phone Link (Android texts on this PC) ---- */
   const phoneLinkGate = (user, ip) => {
     requirePermission(user, 'sources.manage');
-    if (!s.phonelink.available) throw new HttpError(400, 'phonelink_unavailable', 'This only works when the app runs on the Windows PC where Phone Link is set up.');
     // Texts on this PC belong to whoever uses it, so only someone sitting at it may connect them.
     if (!isLoopback(ip)) throw new HttpError(403, 'phonelink_local_only', 'Connect Phone Link from the PC where it runs (open the app at http://localhost there).');
   };

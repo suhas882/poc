@@ -23,21 +23,40 @@ import { upsertRecord } from '../ingest/pipeline.mjs';
 
 const PKG_PREFIX = 'microsoft.yourphone_';
 
+/** Running inside WSL (Linux on Windows)? Then the Windows drives are under /mnt. */
+export const isWsl = () => process.platform === 'linux' && (() => { try { return /microsoft|wsl/i.test(fs.readFileSync('/proc/version', 'utf8')); } catch { return false; } })();
+
+/** Where Windows keeps per-user app data: %LOCALAPPDATA% natively, or C:\Users\*\AppData\Local seen from WSL. */
+export function localAppDataDirs(env = process.env) {
+  const dirs = [];
+  if (process.platform === 'win32') {
+    if (env.LOCALAPPDATA) dirs.push(env.LOCALAPPDATA);
+    else if (env.USERPROFILE) dirs.push(path.join(env.USERPROFILE, 'AppData', 'Local'));
+  } else if (isWsl()) {
+    for (const drive of safeDir('/mnt').filter(d => /^[a-z]$/.test(d))) {
+      const users = path.join('/mnt', drive, 'Users');
+      for (const u of safeDir(users)) if (!/^(public|default|default user|all users)$/i.test(u)) dirs.push(path.join(users, u, 'AppData', 'Local'));
+    }
+  }
+  return dirs;
+}
+
 /** Every phone.db Phone Link has on this PC, newest first. */
 export function findPhoneLinkDatabases(config, env = process.env) {
   if (config.phonelink.dbPath) {
     const p = config.phonelink.dbPath;
     return fs.existsSync(p) ? [{ path: p, ...stat(p) }] : [];
   }
-  if (process.platform !== 'win32' || !env.LOCALAPPDATA) return [];
-  const pkgs = path.join(env.LOCALAPPDATA, 'Packages');
   const found = [];
-  for (const pkg of safeDir(pkgs)) {
-    if (!pkg.toLowerCase().startsWith(PKG_PREFIX)) continue;
-    const indexed = path.join(pkgs, pkg, 'LocalCache', 'Indexed');
-    for (const id of safeDir(indexed)) {
-      const p = path.join(indexed, id, 'System', 'Database', 'phone.db');
-      if (fs.existsSync(p)) found.push({ path: p, ...stat(p) });
+  for (const local of localAppDataDirs(env)) {
+    const pkgs = path.join(local, 'Packages');
+    for (const pkg of safeDir(pkgs)) {
+      if (!pkg.toLowerCase().startsWith(PKG_PREFIX)) continue;
+      const indexed = path.join(pkgs, pkg, 'LocalCache', 'Indexed');
+      for (const id of safeDir(indexed)) {
+        const p = path.join(indexed, id, 'System', 'Database', 'phone.db');
+        if (fs.existsSync(p)) found.push({ path: p, ...stat(p) });
+      }
     }
   }
   return found.sort((a, b) => b.modifiedMs - a.modifiedMs);
@@ -190,15 +209,16 @@ export class PhoneLinkConnector {
   /** @param {{db: import('../db.mjs').Database, config: any}} deps */
   constructor({ db, config }) { this.db = db; this.config = config; this.tmp = path.join(config.dataDir, 'tmp'); }
 
-  get available() { return Boolean(this.config.phonelink.dbPath) || process.platform === 'win32'; }
+  get available() { return Boolean(this.config.phonelink.dbPath) || process.platform === 'win32' || isWsl(); }
 
   /** What is on this PC: where the file is, whether messages were recognized, counts and date range. Never message text. */
   check() {
     const dbs = findPhoneLinkDatabases(this.config);
     if (!dbs.length) {
-      return { found: false, reason: process.platform === 'win32' || this.config.phonelink.dbPath
+      const where = process.platform === 'win32' ? 'Windows' : isWsl() ? 'WSL (Linux on Windows)' : process.platform;
+      return { found: false, runningOn: where, reason: this.available
         ? 'Phone Link has no synced messages for this Windows user yet. Open Phone Link, pair your Android phone, turn on Messages, and let it sync.'
-        : 'This only works when the app runs on the Windows PC where Phone Link is set up.' };
+        : `This app is running on ${where}, not on Windows, so it cannot see Phone Link. Start it with start.bat on the Windows PC where Phone Link is set up.` };
     }
     const file = dbs[0];
     return withSnapshot(file.path, this.tmp, (db) => {
