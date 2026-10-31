@@ -59,3 +59,10 @@ The original README sets two gates: no model calls until Bellevue's approved mod
 - New texts are picked up every `PHONELINK_SYNC_MINUTES` and right before each search.
 - Limits: Android only (iPhone texts are not stored this way), only what Phone Link has synced (recent texts), MMS pictures are not included, and WhatsApp still needs an export.
 - Not yet verified against a real Phone Link file. Tested with a stand-in database in `tests/phonelink.test.mjs`.
+
+## Demo data saved in SQLite
+
+- What you enter in Demo mode (the search plan, review marks and notes, relevance labels, the activity log) is now saved in the app's SQLite database (`data/records.db`, table `demo_state`) instead of only in the browser. It survives reloads, clearing browser data, private windows and server restarts.
+- People who are not signed in are identified by a private browser cookie (`prs_device`). When they sign in, their demo work moves to their account, so it is the same on any browser they sign in from.
+- API: `GET /api/demo-state`, `PUT /api/demo-state/:key` with `{ value }`, and `DELETE /api/demo-state/:key`. Only the seven known demo keys are accepted, up to 1 MB each. This also works on `DEMO_ONLY` servers.
+- Real data was already stored in SQLite and is unchanged.

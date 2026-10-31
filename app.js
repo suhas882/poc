@@ -40,18 +40,101 @@ const scenarios = [
     { id: "vague-6", label: "Broad request · neighborhood", type: "Vague request", request: "Please provide all records about neighborhoods.", topics: "neighborhood", needsClarification: true, relevant: ["R-004", "R-010", "R-014"] }
 ];
 const synonymGroups = [['road closure', 'street closure', 'lane closure', 'detour', 'traffic control'], ['right-of-way work', 'street use', 'temporary street occupancy', 'excavation permit'], ['utility work', 'utility construction', 'water main', 'underground utility'], ['repair', 'maintenance', 'restoration'], ['pedestrian crossing', 'crosswalk', 'crossing'], ['city projects', 'capital projects', 'project update', 'project files'], ['stormwater', 'rainwater drains', 'drainage inlets', 'catch basins', 'storm inspection'], ['traffic signal', 'signal controller', 'intersection signal', 'traffic light'], ['utility coordination', 'utility coordination email', 'underground utility', 'work schedule'], ['public right-of-way permit', 'permit review checklist', 'excavation permit', 'street use permit'], ['parks maintenance', 'trail repair', 'park work order', 'sign replacement'], ['neighborhood mobility', 'sidewalk gaps', 'pedestrian access', 'safe crossings'], ['water service interruption', 'service outage', 'valve replacement', 'water shutoff']];
+/* Demo workspace storage: SQLite on the server (survives reloads and cleared browser data), with browser storage as a fast cache. */
+const SERVER_KEYS = ['synthetic-search-events', 'synthetic-search-plan', 'synthetic-active-request-id', 'synthetic-demo-actor', 'synthetic-review-marks', 'synthetic-review-notes', 'synthetic-label-votes'];
+const memory = new Map(), pending = new Map();
+let csrfToken = '', serverOk = false;
+const store = {
+    get(key) { if (memory.has(key))
+        return memory.get(key); try {
+        return localStorage.getItem(key);
+    }
+    catch {
+        return null;
+    } },
+    set(key, value) { memory.set(key, value); try {
+        localStorage.setItem(key, value);
+    }
+    catch { } ; if (SERVER_KEYS.includes(key))
+        queueSave(key); },
+    remove(key) { memory.delete(key); try {
+        localStorage.removeItem(key);
+    }
+    catch { } ; if (SERVER_KEYS.includes(key))
+        queueSave(key); }
+};
+function queueSave(key) { if (!serverOk)
+    return; clearTimeout(pending.get(key)); pending.set(key, setTimeout(() => { pending.delete(key); void pushKey(key); }, 300)); }
+function pushKey(key, keepalive = false) {
+    const raw = memory.get(key);
+    const headers = { 'content-type': 'application/json', 'x-requested-with': 'prs' };
+    if (csrfToken)
+        headers['x-csrf-token'] = csrfToken;
+    let value = null;
+    if (raw !== undefined) {
+        try {
+            value = JSON.parse(raw);
+        }
+        catch {
+            value = raw;
+        }
+    }
+    return fetch(`/api/demo-state/${encodeURIComponent(key)}`, { method: raw === undefined ? 'DELETE' : 'PUT', headers, credentials: 'same-origin', keepalive, body: raw === undefined ? undefined : JSON.stringify({ value }) }).catch(() => undefined);
+}
+async function hydrateStore() {
+    try {
+        const st = await fetch('/api/auth/status', { credentials: 'same-origin' }).then(r => r.ok ? r.json() : null);
+        csrfToken = st?.data?.csrfToken || '';
+        const res = await fetch('/api/demo-state', { credentials: 'same-origin' });
+        if (!res.ok)
+            return;
+        const body = await res.json();
+        serverOk = true;
+        const saved = body.data || {};
+        for (const key of SERVER_KEYS) {
+            if (key in saved) {
+                const v = saved[key].value;
+                const text = typeof v === 'string' ? v : JSON.stringify(v);
+                memory.set(key, text);
+                try {
+                    localStorage.setItem(key, text);
+                }
+                catch { }
+            }
+            else {
+                let local = null;
+                try {
+                    local = localStorage.getItem(key);
+                }
+                catch { }
+                ;
+                if (local !== null) {
+                    memory.set(key, local);
+                    void pushKey(key);
+                }
+            }
+        }
+    }
+    catch { /* server unreachable: browser storage only */ }
+}
+if (typeof window !== 'undefined') {
+    window.addEventListener('pagehide', () => { for (const [key, t] of pending) {
+        clearTimeout(t);
+        void pushKey(key, true);
+    } pending.clear(); });
+}
 let events = loadEventLog(), currentScenario = null, lastResults = [], mode = 'hybrid', reviewMarks = loadStored('synthetic-review-marks', {}), reviewNotes = loadStored('synthetic-review-notes', {}), lastSearchMs = 0, labelVotes = loadLabelVotes(), fullBenchmarkResult = null;
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 function loadStored(key, fallback) { try {
-    return JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback));
+    return JSON.parse(store.get(key) || JSON.stringify(fallback));
 }
 catch {
     return fallback;
 } }
 function loadEventLog() { return loadStored('synthetic-search-events', []); }
 function addEvent(type, details) { events.push({ time: new Date().toISOString(), actor: $('demo-actor')?.value || loadStored('synthetic-demo-actor', 'Clerk reviewer A'), type, details }); try {
-    localStorage.setItem('synthetic-search-events', JSON.stringify(events));
+    store.set('synthetic-search-events', JSON.stringify(events));
 }
 catch { } ; renderLog(); }
 const page = () => document.body.dataset.page || 'request';
@@ -59,9 +142,9 @@ function savedPlan() { return loadStored('synthetic-search-plan', {}); }
 function planValue(id) { return $(id) ? $(id).value : String(savedPlan()[id] || ''); }
 function savePlan() { const plan = {}; for (const id of ['request-text', 'topics', 'alternate-terms', 'people-orgs', 'date-filter', 'department-filter', 'record-filter', 'repository-filter', 'exclusions', 'clarification-questions'])
     plan[id] = $(id)?.value || ''; plan.confirmed = Boolean($('confirm-plan')?.checked); try {
-    localStorage.setItem('synthetic-search-plan', JSON.stringify(plan));
-    localStorage.setItem('synthetic-active-request-id', currentScenario?.id || scenarios[0].id);
-    localStorage.setItem('synthetic-demo-actor', $('demo-actor')?.value || 'Clerk reviewer A');
+    store.set('synthetic-search-plan', JSON.stringify(plan));
+    store.set('synthetic-active-request-id', currentScenario?.id || scenarios[0].id);
+    store.set('synthetic-demo-actor', $('demo-actor')?.value || 'Clerk reviewer A');
 }
 catch { } ; return plan; }
 function initThemePicker() { if (!document.querySelector('[data-theme-choice]')) {
@@ -69,7 +152,7 @@ function initThemePicker() { if (!document.querySelector('[data-theme-choice]'))
     return;
 } const allowed = ['archive', 'signal', 'field-notes'], saved = loadStored('synthetic-ui-theme', 'archive'), initial = allowed.includes(saved) ? saved : 'archive'; document.documentElement.dataset.theme = initial; const buttons = [...document.querySelectorAll('[data-theme-choice]')]; const apply = (theme) => { if (!allowed.includes(theme))
     return; document.documentElement.dataset.theme = theme; buttons.forEach(button => button.setAttribute('aria-pressed', String(button.dataset.themeChoice === theme))); try {
-    localStorage.setItem('synthetic-ui-theme', JSON.stringify(theme));
+    store.set('synthetic-ui-theme', JSON.stringify(theme));
 }
 catch { } }; buttons.forEach(button => button.addEventListener('click', () => apply(button.dataset.themeChoice || ''))); apply(initial); }
 function loadActiveScenario() { const id = loadStored('synthetic-active-request-id', scenarios[0].id); return scenarios.find(s => s.id === id) || scenarios[0]; }
@@ -128,7 +211,7 @@ function renderConceptPreview(s = currentScenario) { if (!s || !$('concept-reque
 function loadScenario(recordEvent = true) { currentScenario = scenarios.find(s => s.id === $('request-select').value) || scenarios[0]; const priorId = loadStored('synthetic-active-request-id', ''), priorPlan = priorId === currentScenario.id ? savedPlan() : {}, initial = { 'request-text': currentScenario.request, topics: currentScenario.topics, 'alternate-terms': currentScenario.alternate || '', 'people-orgs': '', 'date-filter': currentScenario.date || '', 'department-filter': '', 'record-filter': '', 'repository-filter': '', exclusions: '', 'clarification-questions': '' }; for (const [id, value] of Object.entries(initial))
     $(id).value = String(priorPlan[id] ?? value); $('request-type').textContent = currentScenario.type; $('confirm-plan').checked = Boolean(priorPlan.confirmed); $('clarification').hidden = !currentScenario.needsClarification; if (currentScenario.needsClarification && !$('clarification-questions').value)
     draftClarifications(); renderConceptPreview(currentScenario); try {
-    localStorage.setItem('synthetic-active-request-id', currentScenario.id);
+    store.set('synthetic-active-request-id', currentScenario.id);
 }
 catch { } ; if (recordEvent)
     addEvent('scenario_selected', { scenario: currentScenario.id }); }
@@ -195,7 +278,7 @@ function runSearch() { if (!$('topics').value.trim())
     $('confirm-plan').reportValidity();
     return;
 } currentScenario = scenarios.find(s => s.id === $('request-select').value) || scenarios[0]; const plan = savePlan(); try {
-    localStorage.setItem('synthetic-active-request-id', currentScenario.id);
+    store.set('synthetic-active-request-id', currentScenario.id);
 }
 catch { } ; const filters = { date: plan['date-filter'], department: plan['department-filter'], record_type: plan['record-filter'], repository: plan['repository-filter'], exclusions: plan.exclusions }; addEvent('plan_confirmed', { scenario: currentScenario.id, request: plan['request-text'], plan }); addEvent('search_run', { scenario: currentScenario.id, request: plan['request-text'], plan, filters, method: 'hybrid', corpus: 'Synthetic demo corpus' }); location.href = '/search.html'; }
 function repositoryFor(r) { return ({ Transportation: 'Transportation files', 'Public Works': 'Public Works files', Utilities: 'Utilities files', 'City Clerk': 'City Clerk files', 'Development Services': 'Development Services files', Parks: 'Parks files' })[r.department] || 'Other synthetic files'; }
@@ -207,7 +290,7 @@ function renderResults() { const target = $('results'); if (!target)
     return; const data = rank(mode); lastResults = data; const count = $('result-count'); if (count)
     count.textContent = `${data.length} CANDIDATES · SHOWING TOP ${Math.min(10, data.length)}`; const empty = $('empty-state'); if (empty)
     empty.hidden = data.length > 0; target.innerHTML = data.slice(0, 10).map(({ record: r, score, hits, evidence = [] }, index) => { const matched = hits.slice(0, 5).join(', ') || 'context and metadata', strength = score >= 12 ? 'Strong match' : score >= 5 ? 'Possible match' : 'Weak match', why = [...new Set(evidence.slice(0, 4).map(e => `${e.kind === 'concept' ? 'related concept' : e.kind === 'phrase' ? 'phrase' : 'term'} in ${e.field}`))], reason = why.length ? why.join(' · ') : `${mode === 'hybrid' ? 'Concept-expanded' : 'Keyword'} matches: ${matched}`, mark = reviewMarks[r.id] || ''; return `<article class="result"><div class="result-top"><div class="result-titleline"><span class="result-rank">${String(index + 1).padStart(2, '0')}</span><div><h3>${esc(r.title)}</h3><div class="result-meta">${esc(r.department)} · ${esc(r.type)} · ${esc(r.date)} · ${esc(r.id)}${groupFor(r) ? ` · Related set: ${esc(groupFor(r))}` : ''}</div></div></div><span class="score" data-strength="${strength.toLowerCase().split(' ')[0]}">${strength}</span></div><p class="reason"><b>Why shown:</b> ${esc(reason)}</p><blockquote class="passage">“${highlight(r.text, hits)}”</blockquote><div class="review-actions"><span>Staff review</span>${['relevant', 'not relevant', 'unsure'].map(v => `<button class="mark" data-id="${r.id}" data-value="${v}" aria-pressed="${mark === v}">${v}</button>`).join('')}</div><div class="note-row"><input class="review-note-input" data-id="${r.id}" aria-label="Review note for ${esc(r.title)}" placeholder="Optional staff note" value="${esc(reviewNotes[r.id] || '')}"><button class="save-note secondary" data-id="${r.id}">Save note</button></div></article>`; }).join(''); const route = $('route-record'); if (route)
-    route.innerHTML = data.slice(0, 10).map(x => `<option value="${x.record.id}">${x.record.id} · ${esc(x.record.title)}</option>`).join(''); document.querySelectorAll('.mark').forEach(b => b.onclick = () => { reviewMarks[b.dataset.id] = b.dataset.value; localStorage.setItem('synthetic-review-marks', JSON.stringify(reviewMarks)); addEvent('candidate_review_marked', { record_id: b.dataset.id, mark: b.dataset.value }); renderResults(); }); document.querySelectorAll('.save-note').forEach(b => b.onclick = () => { reviewNotes[b.dataset.id] = document.querySelector(`.review-note-input[data-id="${b.dataset.id}"]`).value; localStorage.setItem('synthetic-review-notes', JSON.stringify(reviewNotes)); addEvent('candidate_note_saved', { record_id: b.dataset.id }); renderResults(); }); }
+    route.innerHTML = data.slice(0, 10).map(x => `<option value="${x.record.id}">${x.record.id} · ${esc(x.record.title)}</option>`).join(''); document.querySelectorAll('.mark').forEach(b => b.onclick = () => { reviewMarks[b.dataset.id] = b.dataset.value; store.set('synthetic-review-marks', JSON.stringify(reviewMarks)); addEvent('candidate_review_marked', { record_id: b.dataset.id, mark: b.dataset.value }); renderResults(); }); document.querySelectorAll('.save-note').forEach(b => b.onclick = () => { reviewNotes[b.dataset.id] = document.querySelector(`.review-note-input[data-id="${b.dataset.id}"]`).value; store.set('synthetic-review-notes', JSON.stringify(reviewNotes)); addEvent('candidate_note_saved', { record_id: b.dataset.id }); renderResults(); }); }
 function metrics(data, cutoff, scenario = currentScenario) { const rel = new Set(scenario.relevant), top = data.slice(0, cutoff), hits = top.filter(x => rel.has(x.record.id)).length, first = data.findIndex(x => rel.has(x.record.id)); return { recall: (hits / rel.size * 100).toFixed(0) + '%', precision: (hits / Math.min(cutoff, records.length) * 100).toFixed(0) + '%', first: first < 0 ? 'Not found' : `Rank ${first + 1}` }; }
 function compare() { currentScenario = loadActiveScenario(); const h = timedRank('hybrid'), k = timedRank('keyword'), h10 = metrics(h.results, 10), h50 = metrics(h.results, 50), k10 = metrics(k.results, 10), k50 = metrics(k.results, 50), ht = h10.first === 'Not found' ? 'Not found' : `${h.elapsedMs.toFixed(1)} ms`, kt = k10.first === 'Not found' ? 'Not found' : `${k.elapsedMs.toFixed(1)} ms`; const tiles = $('metrics'); if (tiles)
     tiles.innerHTML = [['Recall @ 10', h10.recall, k10.recall], ['Precision @ 10', h10.precision, k10.precision], ['Recall @ 50', h50.recall, k50.recall], ['Precision @ 50', h50.precision, k50.precision]].map(([l, h, k]) => `<div class="metric"><span>${l}</span><b>${h}</b><small>Keyword ${k}</small></div>`).join(''); $('comparison').hidden = false; $('comparison').innerHTML = `<div class="compare-row compare-header"><span>Method</span><strong>Recall @10</strong><strong>Precision @10</strong><strong>Recall @50</strong><strong>Precision @50</strong><strong>First rank</strong><strong>Time to first</strong></div><div class="compare-row"><span>Hybrid simulation</span><strong>${h10.recall}</strong><strong>${h10.precision}</strong><strong>${h50.recall}</strong><strong>${h50.precision}</strong><strong>${h10.first}</strong><strong>${ht}</strong></div><div class="compare-row"><span>Keyword</span><strong>${k10.recall}</strong><strong>${k10.precision}</strong><strong>${k50.recall}</strong><strong>${k50.precision}</strong><strong>${k10.first}</strong><strong>${kt}</strong></div><p class="metric-caveat">Synthetic labels only. Results are target outcomes to be validated during discovery. Timing is local ranking time, not staff time.</p>`; addEvent('comparison_run', { scenario: currentScenario.id, keyword: { recall_at10: k10.recall, precision_at10: k10.precision, recall_at50: k50.recall, precision_at50: k50.precision, first_relevant_rank: k10.first, time_to_first_relevant_ms: kt }, hybrid: { recall_at10: h10.recall, precision_at10: h10.precision, recall_at50: h50.recall, precision_at50: h50.precision, first_relevant_rank: h10.first, time_to_first_relevant_ms: ht } }); }
@@ -245,7 +328,7 @@ function renderLog() { const count = $('log-count'), preview = $('log-preview'),
     exportButton.disabled = !events.length; if (preview)
     preview.innerHTML = events.length ? events.slice(-12).reverse().map(e => `<div class="log-item"><b>${esc(e.type)}</b><br>${esc(new Date(e.time).toLocaleTimeString())} · ${esc(e.actor || 'Demo user')} · ${esc(JSON.stringify(e.details))}</div>`).join('') : 'Search actions and review marks will appear here.'; }
 function exportLog() { addEvent('log_exported', { event_count: events.length }); const payload = { notice: 'Synthetic local POC event log. Not a legal search declaration.', exported_at: new Date().toISOString(), scenario: loadActiveScenario().id, events }; download(JSON.stringify(payload, null, 2), 'public-records-search-log.json', 'application/json'); }
-function clearLog() { events = []; reviewMarks = {}; reviewNotes = {}; localStorage.removeItem('synthetic-search-events'); localStorage.removeItem('synthetic-review-marks'); localStorage.removeItem('synthetic-review-notes'); renderLog(); }
+function clearLog() { events = []; reviewMarks = {}; reviewNotes = {}; store.remove('synthetic-search-events'); store.remove('synthetic-review-marks'); store.remove('synthetic-review-notes'); renderLog(); }
 function routeCandidate() { const recordId = $('route-record').value, owner = $('route-owner').value; if (!recordId) {
     $('route-status').textContent = 'Run a search and choose a candidate first.';
     return;
@@ -255,7 +338,7 @@ function runBasicAccessibilityChecks() { const fields = [...document.querySelect
     issues.push(`${unnamed.length} buttons lack accessible names`); if (h1 !== 1)
     issues.push(`Expected one page heading, found ${h1}`); const msg = issues.length ? `Basic check found: ${issues.join('; ')}.` : `Basic checks passed for ${fields.length} fields, ${buttons.length} buttons and one heading.`; $('a11y-results').textContent = `${msg} This is not a SureAccess result or conformance finding.`; addEvent('basic_accessibility_self_check', { fields: fields.length, buttons: buttons.length, issues }); }
 function loadLabelVotes() { try {
-    return JSON.parse(localStorage.getItem('synthetic-label-votes') || '{}');
+    return JSON.parse(store.get('synthetic-label-votes') || '{}');
 }
 catch {
     return {};
@@ -264,7 +347,7 @@ function initLabelReview() { const scenarioSelect = $('label-scenario'), roleSel
     return; scenarioSelect.innerHTML = scenarios.map(s => `<option value="${s.id}">${esc(s.label)}</option>`).join(''); scenarioSelect.onchange = renderLabelWorksheet; roleSelect.onchange = renderLabelWorksheet; $('export-labels').onclick = exportLabelWorksheet; renderLabelWorksheet(); }
 function renderLabelWorksheet() { const sid = $('label-scenario').value || scenarios[0].id, role = $('label-role').value, scenario = scenarios.find(s => s.id === sid); const labels = labelVotes[sid] || {}; let marked = 0; const rows = records.map(r => { const entry = labels[r.id] || {}, value = entry[role] || ''; if (value)
     marked++; const options = ['', 'relevant', 'not relevant', 'unsure'].map(v => `<option value="${v}" ${value === v ? 'selected' : ''}>${v || 'Choose label'}</option>`).join(''); const reference = role === 'adjudicator' ? (scenario.relevant.includes(r.id) ? 'Yes' : 'No') : 'Hidden during reviewer entry'; const reviewStatus = role === 'adjudicator' ? (labels[r.id]?.reviewer1 && labels[r.id]?.reviewer2 ? (labels[r.id].reviewer1 === labels[r.id].reviewer2 ? 'Agreement' : 'Difference') : 'Pending') : 'Not shown'; return `<tr><td><b>${esc(r.id)}</b><br>${esc(r.title)}<small>${esc(r.department)} · ${esc(r.type)} · ${esc(r.date)}</small></td><td><select class="label-choice" aria-label="${role === 'reviewer1' ? 'Reviewer 1' : role === 'reviewer2' ? 'Reviewer 2' : 'Adjudicated'} label for ${esc(r.title)}" data-record="${r.id}">${options}</select></td><td>${reference}</td><td>${reviewStatus}</td></tr>`; }).join(''); $('label-table').innerHTML = `<table><thead><tr><th>Record</th><th>${role === 'reviewer1' ? 'Reviewer 1' : role === 'reviewer2' ? 'Reviewer 2' : 'Adjudicated label'}</th><th>${role === 'adjudicator' ? 'Provisional example label' : 'Reference labels'}</th><th>Review status</th></tr></thead><tbody>${rows}</tbody></table>`; $('label-progress').textContent = `${marked} of ${records.length} records labeled in this view`; document.querySelectorAll('.label-choice').forEach(select => select.onchange = () => { const rid = select.dataset.record; labelVotes[sid] ??= {}; labelVotes[sid][rid] ??= {}; labelVotes[sid][rid][role] = select.value; try {
-    localStorage.setItem('synthetic-label-votes', JSON.stringify(labelVotes));
+    store.set('synthetic-label-votes', JSON.stringify(labelVotes));
 }
 catch { } ; addEvent('label_record_saved', { scenario: sid, record_id: rid, reviewer_role: role, label: select.value }); renderLabelWorksheet(); }); }
 function exportLabelWorksheet() { const header = ['scenario_id', 'request_type', 'request_text', 'record_id', 'record_title', 'reviewer_1_label', 'reviewer_2_label', 'adjudicated_label', 'provisional_example_label', 'review_status']; const q = s => `"${String(s ?? '').replace(/"/g, '""')}"`; const lines = [header.map(q).join(',')]; for (const s of scenarios)
@@ -272,4 +355,4 @@ function exportLabelWorksheet() { const header = ['scenario_id', 'request_type',
         const v = labelVotes[s.id]?.[r.id] || {}, disagree = v.reviewer1 && v.reviewer2 && v.reviewer1 !== v.reviewer2;
         lines.push([s.id, s.type, s.request, r.id, r.title, v.reviewer1 || '', v.reviewer2 || '', v.adjudicator || '', s.relevant.includes(r.id) ? 'relevant' : 'not relevant', disagree ? 'Difference' : v.reviewer1 && v.reviewer2 ? 'Agreement' : 'Pending'].map(q).join(','));
     } const blob = new Blob([lines.join('\r\n')], { type: 'text/csv;charset=utf-8' }), url = URL.createObjectURL(blob), a = document.createElement('a'); a.href = url; a.download = 'synthetic-label-review.csv'; a.click(); URL.revokeObjectURL(url); }
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', () => { void hydrateStore().then(() => { events = loadEventLog(); reviewMarks = loadStored('synthetic-review-marks', {}); reviewNotes = loadStored('synthetic-review-notes', {}); labelVotes = loadLabelVotes(); init(); }); });

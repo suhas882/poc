@@ -33,7 +33,11 @@ export class Client {
     if (body !== undefined && !(body instanceof Buffer) && typeof body !== 'string') { h['content-type'] = 'application/json'; payload = JSON.stringify(body); }
     const res = await fetch(this.base + url, { method, headers: h, body: payload, redirect: 'manual' });
     const set = res.headers.get('set-cookie');
-    if (set) this.cookie = set.split(';')[0];
+    if (set) {
+      const jar = new Map(this.cookie ? this.cookie.split('; ').map(c => [c.split('=')[0], c]) : []);
+      for (const part of set.split(/,(?=\s*[A-Za-z_][\w-]*=)/)) { const kv = part.trim().split(';')[0]; const name = kv.split('=')[0]; if (kv.endsWith('=')) jar.delete(name); else jar.set(name, kv); }
+      this.cookie = [...jar.values()].join('; ');
+    }
     const type = res.headers.get('content-type') || '';
     const data = type.includes('json') ? await res.json() : await res.text();
     return { status: res.status, data, headers: res.headers };

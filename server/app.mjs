@@ -20,6 +20,7 @@ import { GmailConnector } from './connectors/gmail.mjs';
 import { DatabaseConnector } from './connectors/database.mjs';
 import { PhoneLinkConnector, isPhoneLink } from './connectors/phonelink.mjs';
 import { startSync } from './routes/sources.mjs';
+import { registerDemoStateRoutes } from './routes/demo-state.mjs';
 import { seedSyntheticSource } from './connectors/synthetic.mjs';
 import { registerSourceRoutes } from './routes/sources.mjs';
 import { registerSearchRoutes } from './routes/search.mjs';
@@ -77,6 +78,7 @@ export function createApp(config, deps = {}) {
   registerSourceRoutes(router, services);
   registerSearchRoutes(router, services);
   registerAdminRoutes(router, services);
+  registerDemoStateRoutes(router, services);
 
   /** @param {import('node:http').IncomingMessage} req @param {import('node:http').ServerResponse} res */
   async function handler(req, res) {
@@ -85,7 +87,7 @@ export function createApp(config, deps = {}) {
     try {
       if (url.pathname === '/api/health' && req.method === 'GET') return sendJson(res, 200, { ok: true, data: { status: 'ok', demoOnly: config.demoOnly } });
       if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/oauth/')) {
-        if (config.demoOnly && url.pathname !== '/api/auth/status') throw new HttpError(404, 'demo_only', 'This server runs the synthetic demo only. Real-data features are switched off (DEMO_ONLY=true).');
+        if (config.demoOnly && url.pathname !== '/api/auth/status' && !url.pathname.startsWith('/api/demo-state')) throw new HttpError(404, 'demo_only', 'This server runs the synthetic demo only. Real-data features are switched off (DEMO_ONLY=true).');
         const user = sessions.fromRequest(req);
         const rate = services.limits.api.take(user ? `u:${user.id}` : `ip:${ip}`);
         if (!rate.allowed) throw new HttpError(429, 'rate_limited', 'Too many requests. Wait a moment and try again.', { retryAfter: rate.retryAfter });
