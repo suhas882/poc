@@ -30,6 +30,9 @@ const counts = Object.fromEntries(['users', 'sources', 'records', 'audit_events'
 
 const uploads = path.join(config.dataDir, 'uploads');
 if (fs.existsSync(uploads)) fs.cpSync(uploads, path.join(dir, 'uploads'), { recursive: true });
+// SQLite files that "SQLite file" database sources read live here; without them those sources fail after a restore.
+const connectors = path.join(config.dataDir, 'connectors');
+if (fs.existsSync(connectors)) fs.cpSync(connectors, path.join(dir, 'connectors'), { recursive: true });
 
 // Verify the snapshot opens and matches before calling it good.
 const check = new Database(target);

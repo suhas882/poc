@@ -50,8 +50,8 @@ Fine for this POC; for more users or heavier syncs, use the VM (option B) or mov
    **Monitoring → Health check:** path `/api/health`.
 5. **Scale out:** keep **1 instance**. Do not enable autoscale.
 6. Register the redirect URIs with Google and Microsoft (step 3 below, with your `azurewebsites.net` host).
-7. **Moving your existing data:** run `node scripts/backup.mjs` locally, then upload the backup's `records.db` and
-   `uploads` folder into `/home/data` (App Service → **Advanced Tools (Kudu) → Debug console**, drag and drop),
+7. **Moving your existing data:** run `node scripts/backup.mjs` locally, then upload the backup's `records.db` and its
+   `uploads` and `connectors` folders into `/home/data` (App Service → **Advanced Tools (Kudu) → Debug console**, drag and drop),
    with the app stopped. Use the same `CREDENTIAL_ENCRYPTION_KEY` as the old server. Then start the app.
 8. **Backups:** enable **Settings → Backups** (copies `/home`, including the database), and/or run
    `node scripts/backup.mjs` from the Kudu SSH console.
@@ -133,7 +133,7 @@ On the VM, before the first start:
 ```bash
 docker compose --env-file .env.production build
 docker compose --env-file .env.production run --rm --no-deps -u root -v ~/restore:/restore app \
-  sh -c "cp /restore/records.db /data/records.db && cp -r /restore/uploads /data/ 2>/dev/null; chown -R node:node /data"
+  sh -c "cp /restore/records.db /data/records.db && cp -r /restore/uploads /restore/connectors /data/ 2>/dev/null; chown -R node:node /data"
 ```
 
 ### 6. Start
