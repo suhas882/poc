@@ -13,7 +13,7 @@ const MIME = { '.pdf': 'application/pdf', '.docx': 'application/vnd.openxmlforma
 
 /** Sources this user can search in a mode (used to scope plans). */
 export function searchableSources(db, user, mode) {
-  const rows = db.all(`SELECT s.id, s.name, s.type FROM sources s WHERE s.tenant_id = ? AND s.status != 'disconnected' AND (s.type = 'synthetic' OR COALESCE(json_extract(s.config, '$.publicDocs'), 0) = 1) = ?
+  const rows = db.all(`SELECT s.id, s.name, s.type FROM sources s WHERE s.tenant_id = ? AND s.status NOT IN ('disconnected', 'pending_approval') AND (s.type = 'synthetic' OR COALESCE(json_extract(s.config, '$.publicDocs'), 0) = 1) = ?
     AND ((s.visibility = 'owner' AND s.owner_user_id = ?) OR (s.visibility = 'roles' AND (s.allowed_roles = '[]' OR EXISTS (SELECT 1 FROM json_each(s.allowed_roles) WHERE value = ?))))
     ORDER BY s.name`, user.tenantId, mode === 'demo' ? 1 : 0, user.id, user.role);
   return mode === 'real' ? applyConsent(db, user, rows) : rows;

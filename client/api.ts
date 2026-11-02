@@ -2,7 +2,7 @@
 
 export interface User { id: string; name: string; email: string; role: string; permissions: string[]; isDemo?: boolean; organization?: string }
 export interface Switches { realSources: boolean; phoneLink: boolean; secondApproval: boolean }
-export interface AuthStatus { realSources?: boolean; demoOnly: boolean; demoAccounts?: boolean; setupRequired: boolean; consentRequired?: boolean; user: User | null; csrfToken: string | null; offline?: boolean; pack?: { id: string; name: string; label: string } | null; switches?: Switches | null }
+export interface AuthStatus { realSources?: boolean; demoOnly: boolean; demoAccounts?: boolean; setupRequired: boolean; consentRequired?: boolean; user: User | null; csrfToken: string | null; offline?: boolean; pack?: { id: string; name: string; label: string } | null; switches?: Switches | null; signIn?: { google?: boolean; microsoft?: boolean }; identities?: { provider: string; email: string; linkedAt: string; lastUsedAt: string | null }[] }
 export interface Page<T> { data: T; meta?: { page: number; pageSize: number; total: number; [k: string]: unknown } }
 
 export class ApiError extends Error {

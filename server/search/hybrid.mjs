@@ -21,7 +21,7 @@ const WEIGHTS = { primary: 1.0, alternate: 0.6, semantic: 0.8 };
  */
 export function accessFilter(user, mode) {
   return {
-    sql: `r.tenant_id = ? AND s.tenant_id = ? AND s.status != 'disconnected' AND r.is_synthetic = ?
+    sql: `r.tenant_id = ? AND s.tenant_id = ? AND s.status NOT IN ('disconnected', 'pending_approval') AND r.is_synthetic = ?
       AND ((s.visibility = 'owner' AND s.owner_user_id = ?)
         OR (s.visibility = 'roles' AND COALESCE(json_extract(s.config, '$.provider'), '') NOT LIKE 'phonelink%'
           AND (s.allowed_roles = '[]' OR EXISTS (SELECT 1 FROM json_each(s.allowed_roles) WHERE value = ?)))

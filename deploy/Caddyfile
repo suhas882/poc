@@ -1,0 +1,12 @@
+# HTTPS in front of the app. Caddy obtains and renews the certificate for {$DOMAIN} by itself
+# (ports 80 and 443 must be open to the internet, and DOMAIN must point at this server).
+{$DOMAIN} {
+	encode gzip
+	# Browsers remember to use https for this host only (no includeSubDomains: other names may not have it).
+	header Strict-Transport-Security "max-age=31536000"
+	# Uploads can be large (UPLOAD_MAX_BYTES, default 25 MB); allow a little more for the request around them.
+	request_body {
+		max_size 30MB
+	}
+	reverse_proxy app:8765
+}

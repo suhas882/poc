@@ -105,6 +105,8 @@ code { font-family: var(--mono); font-size: .92em; background: var(--line-soft);
 .stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-content: start; min-width: 0; }
 .card > table.data-table, .card > div > table.data-table { display: block; overflow-x: auto; position: relative; }
 .grid-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+.connector-groups { display: grid; gap: 22px; }
+.connector-group > h3 { margin: 0 0 10px; }
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; }
 .tile { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 18px; box-shadow: var(--shadow); }
 .tile b { display: block; font-size: 26px; line-height: 1.1; }
@@ -390,3 +392,20 @@ legend { font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transfor
   .data-table th { background: #eee; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* Sign in with Google / Microsoft */
+.sso-options { margin: 8px 0 16px; }
+.sso-button { justify-content: center; text-align: center; text-decoration: none; }
+.divider-text { text-align: center; color: var(--muted, #5b6474); font-size: .85rem; margin: 6px 0 0; }
+.welcome-list { display: grid; gap: 10px; margin: 12px 0; }
+.welcome-item { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; }
+.welcome-item p { margin: 2px 0 0; }
+.table-scroll { overflow-x: auto; }
+.card-actions.compact { gap: 6px; flex-wrap: nowrap; }
+code.scope { display: inline-block; margin: 0 4px 4px 0; }
+.provider-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+.provider-card .welcome-item .card-actions { flex-shrink: 0; align-items: center; }
+.privacy-note { margin: 4px 0 18px; }
+.integration-provider { margin: 16px 0; }
+.integration-provider h3 { display: flex; align-items: center; gap: 10px; }
+.alert-list { display: grid; gap: 8px; margin: 10px 0; }

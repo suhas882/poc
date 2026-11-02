@@ -81,7 +81,9 @@ export async function initShell(opts = {}) {
     if (tier) {
         const real = currentMode() === 'real';
         replace(tier, h('div', { class: 'tier-banner', role: 'note' }, real ? h('span', { class: 'pill teal' }, 'Real sources') : h('span', { class: 'pill gray' }, 'Tier 0'), h('span', null, real ? 'New requests search your connected, read-only sources. Access checks and the audit log apply.'
-            : 'Demo data only: invented requests, invented records and openly published documents. Real sources are off.')));
+            : status.realSources
+                ? 'Demo mode: new requests search invented records and openly published documents only. Switch to real data to search your connected sources.'
+                : 'Demo data only: invented requests, invented records and openly published documents. Real sources are off.')));
     }
     return status;
 }

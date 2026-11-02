@@ -6,6 +6,9 @@ tmp/
 node_modules/
 data/
 .env
+.env.production
+.env.*.local
+backups/
 *.db
 *.db-wal
 *.db-shm

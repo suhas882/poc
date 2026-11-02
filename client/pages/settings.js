@@ -1,7 +1,7 @@
 // Screen 9: Settings. Search permission, holidays, admin switches, roles. Screen 14: city packs.
 import { ApiError, can, get, patch, post, put, signOut } from '../api.js';
 import { currentMode, initShell } from '../shell.js';
-import { $, alertBox, busy, field, fmtDate, fmtNum, h, openDialog, pill, replace, ROLE_LABEL, toast } from '../ui.js';
+import { $, alertBox, busy, empty, field, fmtDate, fmtNum, h, openDialog, pill, replace, ROLE_LABEL, toast } from '../ui.js';
 let status;
 const root = $('#root');
 const cardHead = (_n, title, micro = '') => h('div', { class: 'card-heading' }, h('h2', null, title), micro ? h('span', { class: 'micro' }, micro) : null);
@@ -19,9 +19,84 @@ async function draw() {
         status.realSources && !u.isDemo && can(status, 'search.run') ? get('/api/consent').then(r => r.data).catch(() => null) : null,
         get('/api/settings').then(r => r.data).catch(() => null)
     ]);
-    replace(root, h('div', { class: 'cols-2' }, h('div', { class: 'stack' }, accountCard(), permissionCard(consent), wf ? switchesCard(wf, admin) : null, rolesCard(), h('section', { class: 'card' }, cardHead('', 'Bellevue AI review package'), h('p', { class: 'helper' }, 'Data flow, what the model sees, human review steps, logging, and open items for the AI Questionnaire.'), h('div', { class: 'form-row' }, h('a', { class: 'button secondary link-button', href: '/ai-review.html' }, 'Open the package')))), h('div', { class: 'stack' }, wf ? holidaysCard(wf, admin) : null, wf ? packsCard(wf, admin) : null)), sys ? systemCard(sys) : null, usage ? usageCard(usage) : null, can(status, 'users.manage') ? h('section', { class: 'card', id: 'users-card' }, cardHead('', 'Users and roles'), h('div', { id: 'users-body' })) : null, settings && admin ? retentionCard(settings.retention) : null);
-    if (can(status, 'users.manage'))
+    replace(root, h('div', { class: 'cols-2' }, h('div', { class: 'stack' }, accountCard(), permissionCard(consent), wf ? switchesCard(wf, admin) : null, rolesCard(), h('section', { class: 'card' }, cardHead('', 'Bellevue AI review package'), h('p', { class: 'helper' }, 'Data flow, what the model sees, human review steps, logging, and open items for the AI Questionnaire.'), h('div', { class: 'form-row' }, h('a', { class: 'button secondary link-button', href: '/ai-review.html' }, 'Open the package')))), h('div', { class: 'stack' }, wf ? holidaysCard(wf, admin) : null, wf ? packsCard(wf, admin) : null)), admin && status.realSources ? h('section', { class: 'card', id: 'integrations-card' }, cardHead('', 'Application Integration Settings', 'SUPERVISORS ONLY'), h('div', { id: 'integrations-body' }, h('p', { class: 'helper' }, 'Loading\u2026'))) : null, sys ? systemCard(sys) : null, usage ? usageCard(usage) : null, can(status, 'users.manage') ? h('section', { class: 'card', id: 'requests-card' }, cardHead('', 'Access requests'), h('div', { id: 'requests-body' })) : null, can(status, 'users.manage') ? h('section', { class: 'card', id: 'users-card' }, cardHead('', 'Users and roles'), h('div', { id: 'users-body' })) : null, settings && admin ? retentionCard(settings.retention) : null);
+    if (can(status, 'users.manage')) {
+        loadRequests();
         loadUsers();
+    }
+    if (admin && status.realSources)
+        loadIntegrations();
+}
+/**
+ * The owner's one-time Google and Microsoft setup. Users never see or edit this; they only sign in and grant
+ * permission. Secrets and tokens are never sent here: only states, the redirect URIs, and what to fix.
+ */
+async function loadIntegrations(live = false, btn) {
+    const body = $('#integrations-body');
+    if (!body)
+        return;
+    let r;
+    try {
+        r = live ? (await busy(btn, 'Checking\u2026', () => post('/api/admin/integrations/check'))).data : (await get('/api/admin/integrations')).data;
+    }
+    catch (e) {
+        replace(body, alertBox(e instanceof ApiError ? e.message : 'The integration status could not be loaded.'));
+        return;
+    }
+    const READY = { ready: ['Ready', 'st-connected'], partial: ['Partly ready', 'st-syncing'], unverified: ['Configured, not checked', 'st-syncing'], blocked: ['Blocked', 'st-needs_attention'], not_configured: ['Not configured', 'st-needs_attention'] };
+    const API = { enabled: ['Enabled', 'st-connected'], disabled: ['Disabled', 'st-needs_attention'], unknown: ['Not verified yet', 'st-planned'] };
+    const pill = ([text, cls]) => h('span', { class: `status-pill ${cls}` }, text);
+    const ok3 = (v) => pill(v === true ? ['Accepted', 'st-connected'] : v === false ? ['Refused or missing', 'st-needs_attention'] : ['Not checked', 'st-planned']);
+    const row = (name, state, detail) => h('tr', null, h('th', { scope: 'row' }, name), h('td', null, state), h('td', null, detail));
+    const provider = (title, p, rows) => h('section', { class: 'integration-provider' }, h('h3', null, title, ' ', pill(READY[p.readiness] || [p.readiness, 'st-planned'])), h('table', { class: 'data-table' }, h('tbody', null, ...rows)), h('details', null, h('summary', null, 'Provider requirements (outside this app)'), h('ul', { class: 'plain-list' }, ...p.requirements.map((x) => h('li', null, x)))));
+    const graphRow = (label, e) => row(label, pill(API[e.state] || [e.state, 'st-planned']), e.detail);
+    replace(body, h('p', { class: 'helper' }, 'Configured once on the server by the application owner. Every approved user then connects their own Google or Microsoft account by signing in and granting permission; nobody else creates projects, registrations or secrets. Client secrets and tokens are never shown here.'), r.errors.length ? h('div', { class: 'alert-list' }, ...r.errors.map((e) => alertBox(e))) : alertBox('No configuration problems found.', 'ok'), provider('Google', r.google, [
+        row('OAuth client', ok3(r.google.client.ok), `${r.google.clientId ? `Client ${r.google.clientId} from ${r.google.credentialSource}. ` : ''}${r.google.client.detail}`),
+        row('Redirect URI', pill(r.google.redirect.problem ? ['Problem', 'st-needs_attention'] : ['Valid', 'st-connected']), `${r.google.redirect.uri}${r.google.redirect.problem ? ` · ${r.google.redirect.problem}` : ' · must be registered exactly like this'}`),
+        row('Gmail API', pill(API[r.google.apis.gmail.state]), r.google.apis.gmail.detail),
+        row('Google Drive API', pill(API[r.google.apis.drive.state]), r.google.apis.drive.detail),
+        row('Permissions requested', pill(['Read-only', 'st-connected']), r.google.scopes.join(' · '))
+    ]), provider('Microsoft', r.microsoft, [
+        row('Entra app registration', ok3(r.microsoft.client.ok), `${r.microsoft.clientId ? `Client ${r.microsoft.clientId}, tenant "${r.microsoft.tenant}". ` : ''}${r.microsoft.client.detail}`),
+        row('Redirect URI', pill(!r.microsoft.configured ? ['Not configured', 'st-planned'] : r.microsoft.redirect.problem ? ['Problem', 'st-needs_attention'] : ['Valid', 'st-connected']), r.microsoft.redirect.uri),
+        graphRow('Graph: Outlook Mail', r.microsoft.graph.outlook), graphRow('Graph: OneDrive', r.microsoft.graph.onedrive), graphRow('Graph: SharePoint', r.microsoft.graph.sharepoint),
+        row('Permissions requested', pill(['Read-only', 'st-connected']), r.microsoft.scopes.join(' · '))
+    ]), h('p', { class: 'helper' }, `Credential encryption: ${r.encryption.ok ? `on (${r.encryption.source})` : 'MISSING'}. Connections so far: ${r.connections.length ? r.connections.map((c) => `${c.type} ${c.sources} (${c.people} ${c.people === 1 ? 'person' : 'people'})`).join(', ') : 'none'}.`), h('div', { class: 'form-row' }, h('button', { type: 'button', class: 'button primary', on: { click: (e) => loadIntegrations(true, e.currentTarget) } }, 'Check configuration'), h('span', { class: 'hint' }, r.checkedAt ? `Checked ${fmtDate(r.checkedAt, true)}. Reads no mail or files; uses only your own connections for API checks.` : 'Asks Google and Microsoft whether the client credentials are accepted, and checks the APIs with your own connections. Reads no mail or files.')));
+}
+/**
+ * People who signed in with Google or Microsoft and asked for an account. Approving creates the account in this
+ * organization with the chosen role and links the exact sign-in that asked; rejecting creates nothing.
+ */
+async function loadRequests() {
+    const body = $('#requests-body');
+    if (!body)
+        return;
+    let list;
+    try {
+        list = (await get('/api/access-requests')).data;
+    }
+    catch (e) {
+        replace(body, alertBox(e instanceof ApiError ? e.message : 'Requests could not be loaded.'));
+        return;
+    }
+    const open = list.filter(r => r.status === 'pending'), done = list.filter(r => r.status !== 'pending');
+    const decide = async (e, r, what, role) => {
+        if (what === 'reject' && !confirm(`Reject the request from ${r.name} (${r.email})? No account is created.`))
+            return;
+        try {
+            await busy(e.currentTarget, what === 'approve' ? 'Approving…' : 'Rejecting…', () => post(`/api/access-requests/${r.id}/${what}`, what === 'approve' ? { role } : {}));
+            toast(what === 'approve' ? `${r.name} can now sign in as ${ROLE_LABEL[role]}.` : 'Request rejected.');
+            loadRequests();
+            loadUsers();
+        }
+        catch (err) {
+            toast(err instanceof ApiError ? err.message : 'Could not save the decision.', 'error');
+        }
+    };
+    replace(body, h('p', { class: 'helper' }, 'People who signed in with Google or Microsoft but have no account. Approving adds them to this organization with the role you choose and links the exact account they signed in with. Nothing is created for rejected requests.'), open.length ? h('table', { class: 'data-table' }, h('thead', null, h('tr', null, ...['Applicant', 'Organization', 'Reason', 'Asked', 'Decision'].map(x => h('th', { scope: 'col' }, x)))), h('tbody', null, open.map(r => {
+        const role = h('select', { 'aria-label': `Role for ${r.name}` }, ...['records_officer', 'reviewer', 'auditor', 'admin'].map(x => h('option', { value: x }, ROLE_LABEL[x])));
+        return h('tr', null, h('th', { scope: 'row' }, r.name, h('div', { class: 'helper' }, `${r.email} · verified by ${r.provider === 'google' ? 'Google' : 'Microsoft'}`)), h('td', null, r.organization), h('td', null, r.reason), h('td', null, fmtDate(r.createdAt, true)), h('td', null, h('div', { class: 'card-actions compact' }, role, h('button', { type: 'button', class: 'button small primary', on: { click: (e) => decide(e, r, 'approve', role.value) } }, 'Approve'), h('button', { type: 'button', class: 'button small danger', on: { click: (e) => decide(e, r, 'reject') } }, 'Reject'))));
+    }))) : empty('No requests waiting', 'New requests appear here after someone signs in with Google or Microsoft and asks for access.'), done.length ? h('details', null, h('summary', null, `Decided (${done.length})`), h('table', { class: 'data-table' }, h('tbody', null, done.map(r => h('tr', null, h('td', null, `${r.name} (${r.email})`), h('td', null, r.status === 'approved' ? `Approved as ${ROLE_LABEL[r.role || ''] || r.role}` : 'Rejected'), h('td', null, `${r.decidedBy || ''} · ${r.decidedAt ? fmtDate(r.decidedAt, true) : ''}`)))))) : null);
 }
 function accountCard() {
     const u = status.user;
@@ -54,7 +129,7 @@ function switchesCard(wf, admin) {
             });
         return h('div', { class: 'toggle-card' }, box, h('span', null, h('b', null, label, ' ', on ? pill('ok', 'On') : pill('gray', 'Off')), h('small', { id: `sw-${label.replace(/\W+/g, '')}` }, disabledReason || hint)));
     };
-    return h('section', { class: 'card' }, cardHead('', 'Admin switches', 'OFF BY DEFAULT'), h('div', { class: 'stack' }, row('Real sources', sw.realSources, '', null, sw.realSources ? 'Set on the server (REAL_SOURCES=true). It cannot be changed here.' : 'Off on this server. Only the server setting REAL_SOURCES can change it; this page cannot.'), row('Phone Link texts (experimental)', sw.phoneLink, 'Employee self-review of their own Android texts before anything reaches a clerk.', 'phoneLink', sw.realSources ? undefined : 'Needs real sources, which are off here.'), row('Second-person approval', sw.secondApproval, 'A Supervisor other than the clerk approves the search record before handoff.', 'secondApproval')), admin ? null : h('p', { class: 'hint' }, 'Only a Supervisor can change these.'));
+    return h('section', { class: 'card' }, cardHead('', 'Admin switches', 'OFF BY DEFAULT'), h('div', { class: 'stack' }, row('Real sources', sw.realSources, '', null, sw.realSources ? 'Set on the server (REAL_SOURCES=true). It cannot be changed here.' : 'Off on this server. Only the server setting REAL_SOURCES can change it; this page cannot.'), row('Phone Link texts (experimental)', sw.phoneLink, 'Employee self-review of their own Android texts before anything reaches a clerk.', 'phoneLink', sw.realSources ? undefined : 'Needs real sources, which are off here.'), row('Second-person approval', sw.secondApproval, 'A Supervisor other than the clerk approves the search record before handoff.', 'secondApproval'), row('Approve new sources', Boolean(sw.sourceApproval), 'A Supervisor approves each source another role connects before it is synchronized or searched. Uploads are not affected.', 'sourceApproval', sw.realSources ? undefined : 'Needs real sources, which are off here.')), admin ? null : h('p', { class: 'hint' }, 'Only a Supervisor can change these.'));
 }
 function rolesCard() {
     const rows = [['records_officer', 'Logs requests, edits and confirms plans, searches, marks, exports and hands off.'], ['reviewer', 'Searches and marks candidates routed to their department. Cannot change settings.'],
@@ -97,7 +172,7 @@ function packsCard(wf, admin) {
 }
 function systemCard(s) {
     const row = (name, ok, state, how) => h('tr', null, h('th', { scope: 'row' }, name), h('td', null, h('span', { class: `status-pill ${ok ? 'st-connected' : 'st-needs_attention'}` }, state)), h('td', null, how));
-    return h('section', { class: 'card' }, cardHead('', 'Server configuration', 'SET ON THE SERVER'), h('p', { class: 'helper' }, 'These are configured on the server, not here, so keys never pass through the browser. See docs/SETUP.md for each setting.'), h('table', { class: 'data-table' }, h('tbody', null, row('AI model for plans and clarification drafts', s.ai.configured, s.ai.configured ? `On \u00B7 ${s.ai.model}` : 'Off: local rules draft plans', 'ANTHROPIC_API_KEY, ANTHROPIC_MODEL. Receives request text and plans only.'), row('Outside embedding service', s.embeddings.configured, s.embeddings.configured ? `On \u00B7 ${s.embeddings.provider}` : 'Off: record text stays on this server', 'Needs EMBEDDINGS_RECORD_CONTENT_APPROVED=true after an approved model and hosting are named.'), row('Gmail connector', s.gmail.configured, s.gmail.configured ? 'Configured' : 'Not configured', `GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET · redirect URI ${s.gmail.redirectUri}`), row('Credential encryption', s.encryption.configured, s.encryption.configured ? `On (${s.encryption.source})` : 'Missing', 'CREDENTIAL_ENCRYPTION_KEY (32 bytes, base64)'), row('OCR for images', s.ocr.enabled && s.ocr.installed, s.ocr.installed ? (s.ocr.enabled ? 'Available' : 'Switched off') : 'Not installed', 'npm install tesseract.js · OCR_ENABLED, OCR_LANG_PATH'), row('PostgreSQL driver', s.drivers.postgres, s.drivers.postgres ? 'Installed' : 'Not installed', 'npm install pg'), row('MySQL driver', s.drivers.mysql, s.drivers.mysql ? 'Installed' : 'Not installed', 'npm install mysql2'))));
+    return h('section', { class: 'card' }, cardHead('', 'Server configuration', 'SET ON THE SERVER'), h('p', { class: 'helper' }, 'These are configured on the server, not here, so keys never pass through the browser. See docs/SETUP.md for each setting.'), h('table', { class: 'data-table' }, h('tbody', null, row('AI model for plans and clarification drafts', s.ai.configured, s.ai.configured ? `On \u00B7 ${s.ai.model}` : 'Off: local rules draft plans', 'ANTHROPIC_API_KEY, ANTHROPIC_MODEL. Receives request text and plans only.'), row('Outside embedding service', s.embeddings.configured, s.embeddings.configured ? `On \u00B7 ${s.embeddings.provider}` : 'Off: record text stays on this server', 'Needs EMBEDDINGS_RECORD_CONTENT_APPROVED=true after an approved model and hosting are named.'), row('Microsoft connector (Outlook mail, OneDrive)', s.microsoft.configured, s.microsoft.configured ? `Configured · tenant ${s.microsoft.tenant}` : 'Not configured', `MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET · redirect URI ${s.microsoft.redirectUri}`), row('Gmail connector', s.gmail.configured, s.gmail.configured ? 'Configured' : 'Not configured', `GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET · redirect URI ${s.gmail.redirectUri}`), row('Credential encryption', s.encryption.configured, s.encryption.configured ? `On (${s.encryption.source})` : 'Missing', 'CREDENTIAL_ENCRYPTION_KEY (32 bytes, base64)'), row('OCR for images', s.ocr.enabled && s.ocr.installed, s.ocr.installed ? (s.ocr.enabled ? 'Available' : 'Switched off') : 'Not installed', 'npm install tesseract.js · OCR_ENABLED, OCR_LANG_PATH'), row('PostgreSQL driver', s.drivers.postgres, s.drivers.postgres ? 'Installed' : 'Not installed', 'npm install pg'), row('MySQL driver', s.drivers.mysql, s.drivers.mysql ? 'Installed' : 'Not installed', 'npm install mysql2'))));
 }
 function usageCard(u) {
     const t = u.totals;

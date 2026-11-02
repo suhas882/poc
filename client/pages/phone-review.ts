@@ -12,7 +12,9 @@ const root = $('#root')!;
 const DEC: [string, string][] = [['city', 'City business'], ['personal', 'Personal'], ['unsure', 'Unsure']];
 
 async function main() {
-  await initShell({ title: 'Phone Link texts: your review' });
+  const status = await initShell({ title: 'Phone Link texts: your review' });
+  // Opened directly while the switch is off: say so instead of calling an endpoint that is switched off.
+  if (!status.switches?.phoneLink) { replace(root, empty('Phone Link texts are switched off', 'A Supervisor can turn them on in Settings. They need real sources on this server.')); return; }
   load();
 }
 

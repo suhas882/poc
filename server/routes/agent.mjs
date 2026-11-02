@@ -29,7 +29,7 @@ export function registerAgentRoutes(router, s) {
     if (!m) throw new HttpError(401, 'agent_key_missing', 'Send the helper key as "Authorization: Bearer prs_agent_...".');
     const row = db.get(`SELECT t.*, u.name AS user_name, u.disabled, u.role FROM agent_tokens t JOIN users u ON u.id = t.user_id WHERE t.token_hash = ?`, sha256(m[1]));
     if (!row || row.revoked_at || row.disabled) throw new HttpError(401, 'agent_key_invalid', 'This helper key is not valid. It may have been revoked; create a new one in Connected Sources.');
-    const source = db.get("SELECT * FROM sources WHERE id = ? AND status != 'disconnected'", row.source_id);
+    const source = db.get("SELECT * FROM sources WHERE id = ? AND status NOT IN ('disconnected', 'pending_approval')", row.source_id);
     if (!source) throw new HttpError(401, 'agent_key_invalid', 'The source for this key was removed. Create a new key in Connected Sources.');
     return { token: row, source };
   }

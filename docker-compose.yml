@@ -1,0 +1,43 @@
+# Runs the app behind Caddy (automatic HTTPS with free Let's Encrypt certificates).
+# The same file works on an Azure VM, an AWS EC2 or Lightsail instance, or any Linux server with Docker.
+#
+#   cp deploy/.env.production.example .env.production   # then fill it in
+#   docker compose --env-file .env.production up -d --build
+#
+# --env-file also supplies DOMAIN below; the app container reads the same file through env_file.
+#
+services:
+  app:
+    build: .
+    image: public-records-search:latest
+    restart: unless-stopped
+    env_file: .env.production
+    environment:
+      # Behind Caddy on this machine: trust its X-Forwarded-For, nothing else reaches the app directly.
+      TRUST_PROXY: "true"
+    volumes:
+      - app-data:/data
+    expose:
+      - "8765"
+
+  caddy:
+    image: caddy:2.8
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN in .env.production and run compose with --env-file .env.production}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  # Named volumes live on the VM's own disk. SQLite needs a local disk: do not put app-data on a network share
+  # (Azure Files, EFS, SMB/NFS), where its file locking is unreliable.
+  app-data:
+  caddy-data:
+  caddy-config:

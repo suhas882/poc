@@ -30,7 +30,10 @@ export const KNOWN_DEPARTMENTS = ['Transportation', 'Public Works', 'Utilities',
 const RECORD_TYPE_WORDS = [
   [/\be-?mails?\b/i, 'Email'], [/\b(text messages?|sms|whatsapp|messages?)\b/i, 'Message conversation'], [/\bmemos?\b/i, 'Memo'],
   [/\bcontracts?\b/i, 'Contract'], [/\bpermits?\b/i, 'Permit'], [/\bnotices?\b/i, 'Notice'], [/\breports?\b/i, 'Report'],
-  [/\bminutes\b/i, 'Meeting minutes'], [/\binvoices?\b/i, 'Invoice'], [/\bspreadsheets?\b/i, 'Spreadsheet'], [/\bpdfs?\b/i, 'PDF']
+  // "Meeting" matches both "Meeting notes" and "Meeting minutes" (types match by substring).
+  [/\b(minutes|meeting notes)\b/i, 'Meeting'], [/\binvoices?\b/i, 'Invoice'], [/\bspreadsheets?\b/i, 'Spreadsheet'], [/\bpdfs?\b/i, 'PDF'],
+  [/\bwork ?orders?\b/i, 'Work order'], [/\bpolicies\b|\bpolicy\b/i, 'Policy'], [/\bschedules?\b/i, 'Schedule'], [/\bfield notes?\b/i, 'Field notes'],
+  [/\bmaintenance logs?\b/i, 'Maintenance log'], [/\bcouncil packets?\b/i, 'Council packet']
 ];
 
 /** Schema sent to Claude with output_config.format. */
@@ -173,7 +176,9 @@ export function rulesPlan(requestText, ctx, departments = []) {
   const dates = parseDateRange(text);
   // Capitalised multi-word names (places, projects, people) become phrases.
   const phrases = [...new Set((text.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b/g) || []).filter(p => !/^(Please|I|We)\b/.test(p)))];
-  const stripped = lower.replace(new RegExp(`\\b${MON}\\b`, 'g'), ' ').replace(/\b\d{4}(-\d{2}-\d{2})?\b/g, ' ');
+  // Record-type words ("emails", "work orders") go into recordTypes, not the search terms.
+  const stripped = RECORD_TYPE_WORDS.reduce((s, [re]) => s.replace(new RegExp(re.source, 'gi'), ' '), lower)
+    .replace(new RegExp(`\\b${MON}\\b`, 'g'), ' ').replace(/\b\d{4}(-\d{2}-\d{2})?\b/g, ' ');
   const words = (stripped.match(/[a-z][a-z-]{2,}/g) || []).filter(w => !PLAN_STOP.has(w));
   // Keep known multi-word concepts intact.
   const concepts = SYNONYM_GROUPS.flat().filter(c => lower.includes(c));

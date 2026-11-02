@@ -103,12 +103,35 @@ export function getConfig(env = process.env) {
     google: Object.freeze({
       clientId: env.GOOGLE_CLIENT_ID || googleFile(env, dataDir).clientId,
       clientSecret: env.GOOGLE_CLIENT_SECRET || googleFile(env, dataDir).clientSecret,
+      credentialSource: env.GOOGLE_CLIENT_ID ? 'environment' : googleFile(env, dataDir).clientId ? 'file' : 'missing',
       redirectUri: env.GOOGLE_REDIRECT_URI || `${publicUrl}/oauth/google/callback`,
       authUrl: env.GOOGLE_AUTH_URL || 'https://accounts.google.com/o/oauth2/v2/auth',
       tokenUrl: env.GOOGLE_TOKEN_URL || 'https://oauth2.googleapis.com/token',
       revokeUrl: env.GOOGLE_REVOKE_URL || 'https://oauth2.googleapis.com/revoke',
-      gmailApiBase: (env.GMAIL_API_BASE || 'https://gmail.googleapis.com/gmail/v1').replace(/\/+$/, '')
+      tokenInfoUrl: env.GOOGLE_TOKENINFO_URL || 'https://oauth2.googleapis.com/tokeninfo',
+      gmailApiBase: (env.GMAIL_API_BASE || 'https://gmail.googleapis.com/gmail/v1').replace(/\/+$/, ''),
+      driveApiBase: (env.GOOGLE_DRIVE_API_BASE || 'https://www.googleapis.com/drive/v3').replace(/\/+$/, '')
     }),
+    gdrive: Object.freeze({
+      maxItemsPerSync: int(env.GDRIVE_MAX_ITEMS_PER_SYNC, 500),
+      maxFileBytes: int(env.GDRIVE_MAX_FILE_BYTES, 10 * 1024 * 1024)
+    }),
+    // Microsoft Graph: Outlook mail and OneDrive. Tenant "common" accepts personal (Outlook.com) and work accounts.
+    microsoft: Object.freeze({
+      clientId: env.MICROSOFT_CLIENT_ID || '',
+      clientSecret: env.MICROSOFT_CLIENT_SECRET || '',
+      tenant: env.MICROSOFT_TENANT || 'common',
+      redirectUri: env.MICROSOFT_REDIRECT_URI || `${publicUrl}/oauth/microsoft/callback`,
+      authBase: (env.MICROSOFT_AUTH_BASE || 'https://login.microsoftonline.com').replace(/\/+$/, ''),
+      graphBase: (env.MICROSOFT_GRAPH_BASE || 'https://graph.microsoft.com/v1.0').replace(/\/+$/, ''),
+      mailDays: int(env.MICROSOFT_MAIL_DAYS, 730),
+      maxItemsPerSync: int(env.MICROSOFT_MAX_ITEMS_PER_SYNC, 500),
+      maxFileBytes: int(env.MICROSOFT_MAX_FILE_BYTES, 10 * 1024 * 1024),
+      throttleRetries: int(env.MICROSOFT_THROTTLE_RETRIES, 5),
+      throttleMaxWaitMs: int(env.MICROSOFT_THROTTLE_MAX_WAIT_MS, 65_000)
+    }),
+    // A sync that failed on a quota or outage is retried this many times, waiting retryDelayMs × attempt between tries.
+    sync: Object.freeze({ retries: int(env.SYNC_RETRIES, 3), retryDelayMs: int(env.SYNC_RETRY_DELAY_MS, 120_000) }),
     gmail: Object.freeze({
       maxMessagesPerSync: int(env.GMAIL_MAX_MESSAGES_PER_SYNC, 500),
       maxListedPerSync: int(env.GMAIL_MAX_LISTED_PER_SYNC, 20000),
@@ -120,7 +143,10 @@ export function getConfig(env = process.env) {
       maxAttachmentBytes: int(env.GMAIL_MAX_ATTACHMENT_BYTES, 10 * 1024 * 1024)
     }),
     uploads: Object.freeze({ maxBytes: int(env.UPLOAD_MAX_BYTES, 25 * 1024 * 1024) }),
-    ocr: Object.freeze({ enabled: bool(env.OCR_ENABLED, true), lang: env.OCR_LANG || 'eng', langPath: env.OCR_LANG_PATH || '' }),
+    // ClamAV clamd for upload scanning. Unset host = uploads are marked "not scanned".
+    clamav: Object.freeze({ host: env.CLAMAV_HOST || '', port: int(env.CLAMAV_PORT, 3310), required: bool(env.CLAMAV_REQUIRED, false), timeoutMs: int(env.CLAMAV_TIMEOUT_MS, 30000) }),
+    // Scanned PDFs: pages are rendered and read by OCR, up to maxPdfPages pages at renderScale (2 = about 144 dpi).
+    ocr: Object.freeze({ enabled: bool(env.OCR_ENABLED, true), lang: env.OCR_LANG || 'eng', langPath: env.OCR_LANG_PATH || '', maxPdfPages: int(env.OCR_MAX_PDF_PAGES, 20), renderScale: num(env.OCR_PDF_SCALE) ?? 2 }),
     phonelink: Object.freeze({ dbPath: env.PHONELINK_DB_PATH || null, syncMinutes: int(env.PHONELINK_SYNC_MINUTES, 5) }),
     database: Object.freeze({ queryTimeoutMs: int(env.DB_CONNECTOR_TIMEOUT_MS, 15000), maxRowsPerSync: int(env.DB_CONNECTOR_MAX_ROWS, 5000) }),
     retention: Object.freeze({

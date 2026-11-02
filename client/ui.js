@@ -118,7 +118,7 @@ export function field(label, control, hint) {
     return h('div', { class: 'field' }, h('label', { for: id }, label), control, hint ? h('p', { class: 'hint' }, hint) : null);
 }
 export const ROLE_LABEL = { admin: 'Supervisor', records_officer: 'Clerk', reviewer: 'Records Coordinator', auditor: 'Auditor' };
-export const SOURCE_LABEL = { gmail: 'Gmail', uploads: 'Uploaded document', messages: 'Message import', database: 'Database', synthetic: 'Synthetic corpus', stub: 'Not connected' };
+export const SOURCE_LABEL = { gmail: 'Gmail', gdrive: 'Google Drive', outlook: 'Outlook mail', onedrive: 'OneDrive', uploads: 'Uploaded document', messages: 'Message import', database: 'Database', synthetic: 'Synthetic corpus', stub: 'Not connected' };
 export const MARK_LABEL = { relevant: 'Relevant', not_relevant: 'Not relevant', unsure: 'Unsure' };
 /** Status pill: an icon character plus words, never color alone. */
 export function pill(kind, text, icon = '') {

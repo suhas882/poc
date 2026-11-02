@@ -49,6 +49,7 @@ async function googleFake() {
       }
     }
     if (url.pathname === '/revoke') { state.revoked.add(form.get('token')); return { json: {} }; }
+    if (url.pathname === '/tokeninfo') return /^access-/.test(form.get('access_token') || '') ? { json: { scope: SCOPE, expires_in: '3500' } } : { status: 400, json: { error: 'invalid_token' } };
     const auth = req.headers.authorization || '';
     if (url.pathname.startsWith('/gmail/v1/') && !/^Bearer access-/.test(auth)) return { status: 401, json: {} };
     const p = url.pathname.replace('/gmail/v1/users/me', '');
@@ -71,7 +72,7 @@ async function googleFake() {
 
 test('Gmail: OAuth with PKCE, encrypted tokens, sync, attachments, incremental history, refresh, disconnect', async (t) => {
   const g = await googleFake();
-  const env = await startApp({ GOOGLE_CLIENT_ID: 'cid', GOOGLE_CLIENT_SECRET: 'csecret', GOOGLE_AUTH_URL: `${g.url}/auth`, GOOGLE_TOKEN_URL: `${g.url}/token`, GOOGLE_REVOKE_URL: `${g.url}/revoke`, GMAIL_API_BASE: `${g.url}/gmail/v1`, PUBLIC_URL: 'http://localhost:9999' });
+  const env = await startApp({ GOOGLE_CLIENT_ID: 'cid', GOOGLE_CLIENT_SECRET: 'csecret', GOOGLE_AUTH_URL: `${g.url}/auth`, GOOGLE_TOKEN_URL: `${g.url}/token`, GOOGLE_REVOKE_URL: `${g.url}/revoke`, GOOGLE_TOKENINFO_URL: `${g.url}/tokeninfo`, GMAIL_API_BASE: `${g.url}/gmail/v1`, PUBLIC_URL: 'http://localhost:9999' });
   t.after(async () => { await env.close(); await g.close(); });
   const c = env.client();
   await c.setup();
@@ -123,11 +124,20 @@ test('Gmail: OAuth with PKCE, encrypted tokens, sync, attachments, incremental h
   let src = await waitForSync(c, sourceId);
   assert.equal(src.status, 'connected', src.lastError);
   assert.equal(src.accountLabel, 'clerk@city.gov');
-  assert.equal(src.visibility, 'owner');
+  assert.equal(src.visibility, 'owner', 'private to the person who connected it by default');
+  assert.deepEqual(src.allowedRoles, []);
   assert.deepEqual(src.scopes, [SCOPE]);
   assert.equal(src.recordCount, 3);
   let jobs = (await c.get(`/api/sources/${sourceId}/jobs`)).data.data;
   assert.equal(jobs[0].status, 'succeeded');
+  assert.equal(auth.searchParams.get('login_hint'), 'admin@example.org', 'Google preselects the signed-in person');
+
+  // Check access: stored access accepted, gmail.readonly granted, mailbox reachable. No message content is read.
+  const callsBefore = g.calls.length;
+  let check = (await c.post(`/api/sources/${sourceId}/verify`)).data.data;
+  assert(check.checks.every(x => x.ok), JSON.stringify(check.checks));
+  assert(check.granted.includes(SCOPE));
+  assert(!g.calls.slice(callsBefore).some(x => /\/messages/.test(x.path)), 'the check reads no message');
 
   const sr = await searchReq(c, 'emails about the Cedar Avenue lane closure', { edits: { recordTypes: [] } });
   const sid = sr.id;
@@ -178,11 +188,20 @@ test('Gmail: OAuth with PKCE, encrypted tokens, sync, attachments, incremental h
   src = await waitForSync(c, sourceId);
   assert.equal(src.status, 'needs_attention');
   assert.match(src.lastError, /Reconnect Gmail/);
+  check = (await c.post(`/api/sources/${sourceId}/verify`)).data.data;
+  assert.equal(check.checks[0].ok, false, 'Check access names the revoked sign-in');
   g.state.failRefresh = false;
 
-  // 7. Other users can't see the mailbox; the owner can share it with roles.
+  // 7. Private by default: another login does not see it until the owner explicitly shares it.
   assert(!(await other.get('/api/sources')).data.data.some(x => x.id === sourceId));
-  assert.equal((await other.del(`/api/sources/${sourceId}`)).status, 403);
+  assert.equal((await other.get('/api/connectors')).data.data.find(x => x.type === 'gmail').lifecycle, 'authorization_required');
+  assert.equal((await c.patch(`/api/sources/${sourceId}`, { visibility: 'roles', allowedRoles: [] })).status, 200);
+  assert((await other.get('/api/sources')).data.data.some(x => x.id === sourceId));
+  assert.equal((await other.get('/api/connectors')).data.data.find(x => x.type === 'gmail').lifecycle, 'connected', 'once shared, other logins see Gmail as connected');
+  assert.equal((await other.del(`/api/sources/${sourceId}`)).status, 403, 'but cannot change or remove it');
+  // The owner can make it private again; then the other login no longer sees it.
+  assert.equal((await c.patch(`/api/sources/${sourceId}`, { visibility: 'owner' })).status, 200);
+  assert(!(await other.get('/api/sources')).data.data.some(x => x.id === sourceId));
 
   // 8. Disconnect: revoke at Google, delete credentials and every indexed record.
   r = await c.del(`/api/sources/${sourceId}`);

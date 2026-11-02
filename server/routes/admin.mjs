@@ -1,4 +1,6 @@
 // @ts-check
+import { knownGaps } from './sources.mjs';
+import { integrationStatus } from '../integrations.mjs';
 import crypto from 'node:crypto';
 import { HttpError, ok, pageParams, readJson, SECURITY_HEADERS, validate } from '../http.mjs';
 import { requirePermission, ROLES } from '../auth.mjs';
@@ -64,6 +66,7 @@ export function registerAdminRoutes(router, s) {
     if (f('category')) { where.push('a.action LIKE ?'); p.push(`${f('category')}.%`); }
     if (f('userId')) { where.push('a.user_id = ?'); p.push(f('userId')); }
     if (f('outcome')) { where.push('a.outcome = ?'); p.push(f('outcome')); }
+    if (f('targetId')) { where.push('a.target_id = ?'); p.push(f('targetId')); }
     if (f('from')) { where.push('a.created_at >= ?'); p.push(`${f('from')}T00:00:00.000Z`); }
     if (f('to')) { where.push('a.created_at <= ?'); p.push(`${f('to')}T23:59:59.999Z`); }
     return { sql: `FROM audit_events a LEFT JOIN users u ON u.id = a.user_id WHERE ${where.join(' AND ')}`, params: p };
@@ -96,7 +99,7 @@ export function registerAdminRoutes(router, s) {
 
   /* ---- search permission (consent) ---- */
   const realSources = (user) => db.all(`SELECT s.id, s.name, s.type, s.owner_user_id = ? AS is_own, (SELECT COUNT(*) FROM records r WHERE r.source_id = s.id) AS records
-    FROM sources s WHERE s.tenant_id = ? AND s.type != 'synthetic' AND s.status != 'disconnected'
+    FROM sources s WHERE s.tenant_id = ? AND s.type != 'synthetic' AND s.status NOT IN ('disconnected', 'pending_approval')
       AND ((s.visibility = 'owner' AND s.owner_user_id = ?) OR (s.visibility = 'roles' AND (s.allowed_roles = '[]' OR EXISTS (SELECT 1 FROM json_each(s.allowed_roles) WHERE value = ?))))
     ORDER BY s.name`, user.id, user.tenantId, user.id, user.role).map(r => ({ id: r.id, name: r.name, type: r.type, isOwn: Boolean(r.is_own), records: r.records }));
 
@@ -153,7 +156,7 @@ export function registerAdminRoutes(router, s) {
     return {
       pack: { id: pack.id, name: pack.name, label: pack.label, departments: pack.departments, recordTypes: pack.recordTypes, holidays: pack.holidays, holidayNote: pack.holidayNote,
         holidaysAdded: pack.holidaysAdded, holidaysRemoved: pack.holidaysRemoved, wording: pack.wording, reviewRules: pack.reviewRules, threshold: pack.broadPlanThreshold, thresholdNote: pack.broadPlanNote,
-        sources: pack.sources, sourceMap: pack.sourceMap, knownGaps: pack.knownGaps, responseDays: pack.responseDays, timezone: pack.timezone },
+        sources: pack.sources, sourceMap: pack.sourceMap, knownGaps: knownGaps(db, user.tenantId, pack), responseDays: pack.responseDays, timezone: pack.timezone },
       packs: listPacks(), switches: switches(db, user.tenantId, config),
       example: { receivedToday: t, dueIfReceivedToday: dueDate(t, new Set(pack.holidays), pack.responseDays) },
       reuseNote: 'Reuse by other agencies is a plan, subject to agency requirements and agreed scope. No other agency uses this tool.'
@@ -181,9 +184,22 @@ export function registerAdminRoutes(router, s) {
     audit.write({ tenantId: user.tenantId, userId: user.id, action: 'settings.updated', ipHash, details: { setting: 'holidays' }, before: before.length, after: { added: body.add ?? null, removed: body.remove ?? null } });
     ok(res, workflowSettings(user));
   });
+  /* ---- Application Integration Settings: the owner's one-time Google and Microsoft setup (Supervisors only) ---- */
+  router.on('GET', '/api/admin/integrations', async ({ res, user }) => {
+    requirePermission(user, 'settings.manage');
+    ok(res, await integrationStatus(s, user));
+  });
+  router.on('POST', '/api/admin/integrations/check', async ({ res, user, ipHash }) => {
+    requirePermission(user, 'settings.manage');
+    const r = await integrationStatus(s, user, { live: true });
+    audit.write({ tenantId: user.tenantId, userId: user.id, action: 'integrations.checked', ipHash, outcome: r.errors.length ? 'failure' : 'success',
+      details: { google: r.google.readiness, microsoft: r.microsoft.readiness, gmailApi: r.google.apis.gmail.state, driveApi: r.google.apis.drive.state, errors: r.errors.length } });
+    ok(res, r);
+  });
+
   router.on('PUT', '/api/settings/switches', async ({ req, res, user, ipHash }) => {
     requirePermission(user, 'settings.manage');
-    const body = validate({ phoneLink: { type: 'bool' }, secondApproval: { type: 'bool' }, realSources: { type: 'bool' } }, await readJson(req));
+    const body = validate({ phoneLink: { type: 'bool' }, secondApproval: { type: 'bool' }, sourceApproval: { type: 'bool' }, realSources: { type: 'bool' } }, await readJson(req));
     if (body.realSources !== undefined && body.realSources !== config.realSources) throw new HttpError(403, 'env_only', 'Real sources are set on the server (REAL_SOURCES). They cannot be changed from the web interface.');
     const before = switches(db, user.tenantId, config);
     if (body.phoneLink !== undefined) {
@@ -191,6 +207,7 @@ export function registerAdminRoutes(router, s) {
       setSetting(db, user.tenantId, 'switch_phonelink', body.phoneLink);
     }
     if (body.secondApproval !== undefined) setSetting(db, user.tenantId, 'switch_approval', body.secondApproval);
+    if (body.sourceApproval !== undefined) setSetting(db, user.tenantId, 'switch_source_approval', body.sourceApproval);
     const after = switches(db, user.tenantId, config);
     audit.write({ tenantId: user.tenantId, userId: user.id, action: 'settings.updated', ipHash, details: { setting: 'admin switches' }, before, after });
     ok(res, workflowSettings(user));

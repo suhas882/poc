@@ -1,0 +1,1 @@
+SELECT * FROM public.test_records ORDER BY id;

@@ -1,0 +1,25 @@
+# Never copied into the image: local data, secrets, and anything only this PC needs.
+node_modules
+data
+tmp
+backups
+.env
+.env.*
+!deploy/.env.production.example
+client_secret*.json
+*.db
+*.db-wal
+*.db-shm
+*.log
+cloudflared.exe
+phonelink-sync.bat
+agent/phonelink-sync.json
+agent/phonelink-sync-state.json
+.git
+.claude
+Claude outputs
+DELETE-THESE-OLD-FILES.txt
+RENAME-ME-TO-.env.txt
+lovable-ui-refresh
+ui-refresh-lovable
+v2

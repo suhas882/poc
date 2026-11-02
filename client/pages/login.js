@@ -16,7 +16,7 @@ async function main() {
         return demoForm(root);
     if (status.setupRequired)
         return setupForm(root);
-    loginForm(root);
+    loginForm(root, status.signIn || {});
 }
 const DEMO_ROLES = [
     ['records_officer', 'Clerk', 'Log a request, edit and confirm the plan, review results, hand off.'],
@@ -36,12 +36,20 @@ function demoForm(root) {
                 }
             } } }, h('b', null, label), h('small', null, text)))), out, h('p', { class: 'hint' }, 'Each visitor gets a private demo workspace with invented accounts. It is removed after three days. You can switch roles from the sidebar.'), h('p', { class: 'hint' }, 'Staff decide. The tool finds, ranks and logs. WCAG 2.1 AA-aligned interface.'));
 }
-function loginForm(root) {
+/** "Continue with Google / Microsoft": a top-level navigation to the server, which sends the browser to the provider. */
+function providerButtons(signIn) {
+    const link = (provider, label) => h('a', { class: 'button secondary sso-button', href: `/oauth/signin/${provider}?next=${encodeURIComponent(next)}` }, label);
+    if (!signIn.google && !signIn.microsoft)
+        return null;
+    return h('div', { class: 'stack sso-options' }, signIn.google ? link('google', 'Continue with Google') : null, signIn.microsoft ? link('microsoft', 'Continue with Microsoft') : null, h('p', { class: 'hint' }, 'Only for people already added to this workspace. Signing in shares just your name and email address with this app. Access to mail or files is asked for separately, one source at a time, after you sign in.'), h('p', { class: 'divider-text', 'aria-hidden': 'true' }, 'or use your email and password'));
+}
+function loginForm(root, signIn = {}) {
     const email = h('input', { type: 'email', autocomplete: 'username', required: true });
     const pw = h('input', { type: 'password', autocomplete: 'current-password', required: true });
     const btn = h('button', { type: 'submit', class: 'button primary' }, 'Sign in');
     const out = h('div');
-    const form = h('form', { novalidate: true }, h('h1', null, 'Sign in'), h('p', { class: 'helper' }, 'Use the account your administrator created for you.'), field('Email', email), field('Password', pw), out, h('div', { class: 'form-row' }, btn));
+    const error = new URLSearchParams(location.search).get('error');
+    const form = h('form', { novalidate: true }, h('h1', null, 'Sign in'), h('p', { class: 'helper' }, 'Use the account your administrator created for you.'), error ? alertBox(error.slice(0, 300)) : null, providerButtons(signIn), field('Email', email), field('Password', pw), out, h('div', { class: 'form-row' }, btn));
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
         replace(out);

@@ -9,7 +9,7 @@
 
 With real sources off, the server refuses Gmail, staff uploads, message imports, database connectors, Phone Link and the PC sync helper. Only invented records and public documents (with web address, retrieval date and a terms check) are allowed. Nothing in the web interface can turn real sources on.
 
-Admin switches in Settings (off by default): Phone Link texts (needs real sources) and second-person approval. City packs (Bellevue, Sample City) hold departments, record types, holidays, wording, review rules, the broad-plan warning level and the source map.
+Admin switches in Settings (off by default): Phone Link texts (needs real sources), second-person approval, and approval of new sources (a Supervisor approves each source another role connects before it is synced or searched). City packs (Bellevue, Sample City) hold departments, record types, holidays, wording, review rules, the broad-plan warning level and the source map.
 
 # Setup, configuration and deployment
 
@@ -72,25 +72,81 @@ Keyword (BM25) search works without it. Anthropic does not offer an embeddings A
 
 Vectors are stored in SQLite and searched by cosine similarity, with no extra infrastructure. That's fine for tens of thousands of chunks; beyond that, move to pgvector. Records are embedded after each sync or upload. After switching models, run a sync on each source and existing chunks are embedded with the new model.
 
-## 6. Gmail
+## 5a. Sign in with Google or Microsoft
 
-1. In Google Cloud Console, create a project and **enable the Gmail API**.
-2. Under **OAuth consent screen**, choose *Internal* if you use Google Workspace (only your domain can connect). Add the scope `https://www.googleapis.com/auth/gmail.readonly`. It's a restricted scope: an *External* app needs Google's verification before anyone outside the test-user list can connect.
+The sign-in page shows **Continue with Google** and **Continue with Microsoft** when that provider's credentials (sections 6 and 6a) are set and real sources are on. Nothing extra needs registering: sign-in reuses the same redirect URIs as the connectors.
+
+- Only people a Supervisor has already added (Settings → Users) can sign in this way. The provider's **verified** email must match; the first sign-in then links the provider's stable account ID to that user. Accounts are never created by signing in.
+- **New people** who sign in with Google or Microsoft and have no account land on **Request access**. It shows the name and email the provider verified (they cannot be edited), and asks for an organization and a reason. Nothing is created: the request waits in **Settings → Access requests**, where a Supervisor approves it with a role (the account is created in the Supervisor's own organization and linked to the exact provider account that asked, by its account ID, never by email) or rejects it. One open request per provider account and per email; every request and decision is audited. A request that names an organization on this server is shown only to that organization's Supervisors.
+- Approved people have no usable password; they sign in with the account they asked from and land on Connected Sources, where each service (Gmail, Drive, Outlook, OneDrive, SharePoint) is connected separately.
+- Once a person has a Google (or Microsoft) account linked, a different account from that provider showing the same email is refused rather than linked.
+- Sign-in asks only for identity (`openid email profile`; Microsoft also `User.Read`). Its tokens are used once to read the identity and are not stored. Reading mail or files is a separate consent per source, offered straight after sign-in on Connected Sources.
+- Microsoft work accounts are matched by their user principal name (a domain the organization verified), not the editable `email` claim. Personal Microsoft accounts use the account's own address.
+- Authorization code flow with PKCE, a nonce, and a one-time state in a 10-minute encrypted cookie. Every sign-in and refusal is in the audit log.
+- Google: no extra scope needs adding to the consent screen for sign-in (`openid`, `email` and `profile` are non-sensitive).
+
+## 5b. One-time owner setup, then users just connect
+
+The application owner sets up Google (section 6) and Microsoft (section 6a) **once**, on the server: client IDs and secrets live only in environment variables or the downloaded client file, never in the browser. After that, every approved user connects their own accounts from **Connected Sources** by signing in and granting permission; they never create projects, registrations, keys or redirect URIs. Each user's tokens are stored encrypted per source and are never used for anyone else.
+
+**Settings → Application Integration Settings** (Supervisors only) shows whether that setup works: client credentials accepted, redirect URIs valid, Gmail API and Drive API enabled, Microsoft registration present, and what each provider still requires. **Check configuration** asks Google and Microsoft whether the client is accepted (using a deliberately invalid code, so no one is signed in), and probes the APIs only with the checking Supervisor's own connections. Secrets and tokens are never shown. Every check is audited.
+
+What one-time setup cannot remove: Google's verification for the restricted Gmail and Drive scopes before people outside the test-user list can connect (or an Internal app in a Workspace domain), and, for some Microsoft organizations, an administrator's consent. SharePoint needs a Microsoft 365 work or school account.
+
+## 6. Gmail and Google Drive
+
+Both use the same Google OAuth client. Each source gets its own token with only its own scope: `gmail.readonly` for Gmail, `drive.readonly` for Drive.
+
+1. In Google Cloud Console, create a project and **enable the Gmail API** (and the **Google Drive API** for Drive).
+2. Under **OAuth consent screen**, choose *Internal* if you use Google Workspace (only your domain can connect). Add the scopes `https://www.googleapis.com/auth/gmail.readonly` and, for Drive, `https://www.googleapis.com/auth/drive.readonly`. Both are **restricted scopes**: an *External* app in *Testing* works only for the listed test users, and its refresh tokens expire after 7 days. Publishing it to production does not skip review: Google requires OAuth verification and, for restricted scopes, a security assessment before people outside the test-user list can connect. An *Internal* app (Google Workspace) needs neither.
 3. Under **Credentials**, create an **OAuth client ID** of type *Web application*. Add the authorized redirect URI `PUBLIC_URL/oauth/google/callback` (for example `http://localhost:8765/oauth/google/callback`, or your https address in production).
 4. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` (plus `GOOGLE_REDIRECT_URI` if it differs from the default).
-5. In the app, go to **Connected Sources → Connect Gmail**, read the consent summary, and continue to Google.
+5. In the app, go to **Connected Sources → Connect Gmail** (or **Connect Google Drive**), read the consent summary, and continue to Google. Google shows its consent screen once per source; after that the stored, encrypted refresh token keeps the source working across sessions, and a new consent is only asked for if the access is revoked or expires.
 
 How it behaves:
 - The flow is authorization code with PKCE and a one-time, user-bound `state`. Only `gmail.readonly` is requested.
 - Messages matching the filter (default `newer_than:2y`) are indexed, along with attachments in supported formats. Spam and trash are skipped.
 - Sync is incremental through Gmail's History API. Deleted or trashed messages are removed from the index.
 - **Disconnect** revokes the token at Google and deletes the stored credentials and every indexed message and attachment.
+- Drive: the first sync lists My Drive and files shared with the user (not the trash); later syncs read only Drive's Changes feed, including edits, trashed and removed files. Google Docs, Sheets and Slides are exported as text or CSV; other files are downloaded when their format is supported (up to `GDRIVE_MAX_FILE_BYTES`).
 - In Google Workspace, an administrator may need to allow the app under *Security → API controls*.
+- If a sync stops with `rateLimitExceeded`, Gmail's per-minute quota was hit. The sync waits and retries on its own; what was fetched is kept, and already indexed messages are never fetched again. **Sync history** shows the endpoint, HTTP status and Google's reason for every failed run.
+
+## 6a. Outlook mail, OneDrive and SharePoint (Microsoft Graph)
+
+Outlook and OneDrive work with personal Microsoft accounts (Outlook.com, Hotmail, Live) and work or school accounts. SharePoint exists only for work or school (Microsoft 365) accounts.
+
+**Teams is not built.** Reading channel messages needs `ChannelMessage.Read.All`, which requires an administrator's consent for the whole organization, and there is no personal-account equivalent. Until a Microsoft 365 tenant grants that, Teams stays listed as NOT searched. Exports from Microsoft Purview eDiscovery can be uploaded instead.
+
+1. Sign in to the [Microsoft Entra admin center](https://entra.microsoft.com) (a personal account such as Outlook.com works) and open **App registrations → New registration**.
+2. Name it (for example *Public Records Search*). Under **Supported account types**, choose *Accounts in any organizational directory and personal Microsoft accounts*.
+3. Under **Redirect URI**, choose platform *Web* and enter `PUBLIC_URL/oauth/microsoft/callback`, for example `http://localhost:8765/oauth/microsoft/callback` (Microsoft allows http only for localhost; use your https address in production).
+4. Copy the **Application (client) ID**. Then open **Certificates & secrets → New client secret** and copy the secret's **Value** (it is shown once).
+5. Under **API permissions**, add *Microsoft Graph → Delegated*: `Mail.Read`, `Files.Read`, `User.Read`, `offline_access`, and for SharePoint `Sites.Read.All`. None of these need administrator consent for a personal account. In a work tenant the administrator may have turned off user consent; then use **Grant admin consent** on this page (or ask the tenant administrator to).
+6. Set `MICROSOFT_CLIENT_ID` and `MICROSOFT_CLIENT_SECRET` in `.env` and restart the server. **Settings → Server configuration** shows the redirect URI the server expects.
+7. In the app, go to **Connected Sources → Connect Outlook mail**, **Connect OneDrive** or **Connect SharePoint** (enter the site address, for example `https://contoso.sharepoint.com/sites/Records`), read the consent summary, and continue to Microsoft.
+
+How it behaves:
+- Authorization code with PKCE and a one-time, user-bound `state`. Each source asks only for its own scope: `Mail.Read` for Outlook, `Files.Read` for OneDrive.
+- Outlook: mail received in the last two years (`MICROSOFT_MAIL_DAYS`), from every folder except Deleted Items and Junk, plus attachments in supported formats. Immutable message IDs are used, so moving a message does not re-index it. Messages that are deleted or moved to Deleted Items or Junk are removed from the index.
+- OneDrive: PDF, Word, Excel, CSV, text and image files up to 10 MB (`MICROSOFT_MAX_FILE_BYTES`). Sync uses Graph's delta API, so later runs pick up only changes and deletions. Files are downloaded from Microsoft's pre-signed link without sending the token there.
+- Throttling (HTTP 429 with `Retry-After`) waits and retries. Sync history shows the Graph endpoint, status and Microsoft's error code for failed runs.
+- Once Outlook or OneDrive is connected, the "Exchange mail" or "OneDrive" placeholder no longer appears as NOT searched.
+- **Disconnect** deletes the stored tokens and every indexed item. Microsoft has no revoke call for this flow; to remove the app from the account too, use [account.live.com/consent/Manage](https://account.live.com/consent/Manage) (personal) or [myapps.microsoft.com](https://myapps.microsoft.com) (work).
+
+- SharePoint: one source per site, reading the site's default document library with the same delta sync as OneDrive. Only `https://….sharepoint.com` addresses are accepted.
+
+## 6b. Sync retries and source approval
+
+- A sync that fails on a quota or a temporary outage (`gmail_rate_limited`, `gmail_unavailable`, `microsoft_throttled`, `microsoft_unavailable`) retries on its own `SYNC_RETRIES` times (default 3), waiting `SYNC_RETRY_DELAY_MS` × attempt (default 2 minutes). Indexed items are never fetched twice. Only one sync per source runs at a time.
+- With **Approve new sources** on (Settings → Admin switches), a source connected by anyone but a Supervisor waits as *Awaiting approval*: it is not synced, not searched and visible only to its owner and Supervisors until a Supervisor approves or rejects it on Connected Sources. Every request, approval and rejection is in the audit log.
 
 ## 7. Uploads, phone files and message exports
 
-- **Documents**: PDF, DOCX, XLSX, CSV, TXT and images. On a phone, the browser's file picker opens the system file chooser, which is the only access the app gets.
-- **Scanned PDFs** have no text layer. Upload page images instead (OCR), or OCR the PDF elsewhere first.
+- **Documents**: PDF, DOCX, XLSX, CSV, TXT, MD, JSON and images. JSON is indexed as `path: value` lines so field names stay searchable; invalid JSON is refused. On a phone, the browser's file picker opens the system file chooser, which is the only access the app gets.
+- **Checks on every upload**: the file's bytes must match its extension, the size limit applies (`UPLOAD_MAX_BYTES`), identical files are not stored twice, and the original is kept outside the web root. Each record keeps its file name, size, SHA-256, uploader and upload time.
+- **Malware scanning (optional)**: run ClamAV's `clamd` and set `CLAMAV_HOST` (and `CLAMAV_PORT`, default 3310). Every upload and message export is scanned before it is parsed or stored; infected files are refused and logged as `upload.rejected`. With `CLAMAV_REQUIRED=true` uploads are refused while the scanner is unreachable; otherwise they go through marked `not_scanned`.
+- **Scanned PDFs** (no text layer) are read by OCR on this server: each page is rendered with pdfjs and `@napi-rs/canvas` (both installed with `pdfjs-dist`) and read by `tesseract.js`. Up to `OCR_MAX_PDF_PAGES` pages (default 20) at `OCR_PDF_SCALE` (default 2, about 144 dpi). The same applies to scanned PDFs from Gmail, Drive, Outlook, OneDrive and SharePoint. Nothing is sent to an outside service.
 - **OCR**: `tesseract.js` is installed as an optional dependency. It downloads `eng.traineddata` on first use; for offline servers, point `OCR_LANG_PATH` at a folder that contains it. Set `OCR_ENABLED=false` to turn it off.
 - **Messages**: phones don't let web services read SMS or chat apps, so import exports you make yourself:
   - Android **SMS Backup & Restore** XML.

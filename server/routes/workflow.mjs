@@ -19,7 +19,7 @@ import { draftClarifications } from '../ai/clarify.mjs';
 import { accessFilter, conceptTerms, ftsQuery, hybridSearch } from '../search/hybrid.mjs';
 import { recordView } from '../ingest/pipeline.mjs';
 import { isPhoneLink } from '../connectors/phonelink.mjs';
-import { startSync } from './sources.mjs';
+import { knownGaps, openStubs, startSync } from './sources.mjs';
 import { requireConsent, searchableSources } from './search.mjs';
 import { activePack, switches } from '../packs.mjs';
 import { businessDaysLeft, deadlineLabel, dueDate, todayIn } from '../deadline.mjs';
@@ -100,7 +100,7 @@ export function registerWorkflowRoutes(router, s) {
       const records = db.get('SELECT COUNT(*) AS n FROM records WHERE source_id = ?', x.id).n;
       return { id: x.id, name: x.name, type: x.type, provider, connected: true, records, experimental: String(provider || '').startsWith('phonelink') };
     }).filter(x => !(x.provider || '').startsWith('phonelink') || sw.phoneLink);
-    const stubs = pack.sources.map(st => ({ id: `stub:${st.key}`, name: st.name, type: 'stub', connected: false, note: st.note, records: null }));
+    const stubs = openStubs(db, user.tenantId, pack).map(st => ({ id: `stub:${st.key}`, name: st.name, type: 'stub', connected: false, note: st.note, records: null }));
     return { sources: rows, stubs };
   }
 
@@ -306,7 +306,7 @@ export function registerWorkflowRoutes(router, s) {
       const st = await checkSource(src);
       statuses.push({ key: src.id, name: src.name, type: src.type, ...st });
     }
-    for (const st of pack.sources) statuses.push({ key: `stub:${st.key}`, name: st.name, type: 'stub', status: 'not_connected', error: 'Not connected in this proof of concept.' });
+    for (const st of openStubs(db, user.tenantId, pack)) statuses.push({ key: `stub:${st.key}`, name: st.name, type: 'stub', status: 'not_connected', error: 'Not connected in this proof of concept.' });
     const searchable = statuses.filter(x => x.status === 'searched' || x.status === 'partial').map(x => x.key);
 
     const runPlan = addedTerms ? { ...plan, keywords: addedTerms, phrases: [], people: [], organizations: [], locations: [], alternateTerms: [] } : plan;
@@ -622,7 +622,7 @@ export function registerWorkflowRoutes(router, s) {
       log: runs.map(r => ({ at: r.finished_at, by: nameOf(r.run_by), kind: r.kind === 'full' ? 'Search' : 'Search with added terms', planVersion: r.plan_version, candidates: r.candidates, added: r.added,
         sources: db.all('SELECT source_name, status, candidates, query, error FROM source_runs WHERE run_id = ? ORDER BY source_name', r.id) })),
       review, marked: marked.filter(m => m.mark || m.route).map(m => ({ recordId: m.id, title: m.title, source: m.source_name, date: m.created_at, mark: m.mark?.mark ?? null, by: m.mark?.by ?? null, at: m.mark?.at ?? null, note: m.mark?.note ?? null, routedTo: m.route })),
-      custodians, knownGaps: pack.knownGaps, handoffWording: pack.wording.handoff,
+      custodians, knownGaps: knownGaps(db, user.tenantId, pack), handoffWording: pack.wording.handoff,
       addedTerms: db.all('SELECT term, kind, source_record_ids, decision, decided_at, plan_version FROM expansion_terms WHERE search_id = ? ORDER BY decided_at', row.id).map(t => ({ ...t, source_record_ids: parseJson(t.source_record_ids, []) })),
       reproducibility: lastFull ? { model: lastFull.model, promptVersion: lastFull.prompt_version, planVersion: lastFull.plan_version, indexTime: lastFull.index_time, searchedAt: lastFull.finished_at } : null,
       approval: { required: switches(db, user.tenantId, config).secondApproval, approvedAt: row.approved_at, approvedBy: nameOf(row.approved_by) },

@@ -25,7 +25,10 @@ export class Database {
     if (file !== ':memory:') fs.mkdirSync(path.dirname(file), { recursive: true });
     this.db = new DatabaseSync(file);
     this.db.exec('PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
-    if (file !== ':memory:') this.db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;');
+    // WAL is fastest on a local disk. On a network share (Azure App Service /home, Azure Files) WAL's shared memory
+    // does not work; set SQLITE_JOURNAL_MODE=DELETE there, and run a single instance.
+    const mode = /^(WAL|DELETE|TRUNCATE)$/i.test(process.env.SQLITE_JOURNAL_MODE || '') ? String(process.env.SQLITE_JOURNAL_MODE).toUpperCase() : 'WAL';
+    if (file !== ':memory:') this.db.exec(`PRAGMA journal_mode = ${mode}; PRAGMA synchronous = ${mode === 'WAL' ? 'NORMAL' : 'FULL'};`);
     this.depth = 0;
   }
 
@@ -37,10 +40,19 @@ export class Database {
     for (const file of files) {
       if (applied.has(file)) continue;
       const sql = fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8');
-      this.tx(() => {
-        this.db.exec(sql);
-        this.run('INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)', file, new Date().toISOString());
-      });
+      // A migration that rebuilds a table starts with this marker. SQLite only honours the pragma outside a
+      // transaction, and without it DROP TABLE would cascade-delete rows that reference the table.
+      const rebuild = sql.startsWith('-- migrate: foreign_keys off');
+      if (rebuild) this.db.exec('PRAGMA foreign_keys = OFF');
+      try {
+        this.tx(() => {
+          this.db.exec(sql);
+          if (rebuild && this.all('PRAGMA foreign_key_check').length) throw new Error(`Migration ${file} left broken foreign keys.`);
+          this.run('INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)', file, new Date().toISOString());
+        });
+      } finally {
+        if (rebuild) this.db.exec('PRAGMA foreign_keys = ON');
+      }
       ran.push(file);
     }
     return ran;

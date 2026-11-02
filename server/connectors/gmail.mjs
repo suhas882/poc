@@ -11,8 +11,13 @@ import { nowIso, parseJson } from '../db.mjs';
 import { randomToken, sha256 } from '../security.mjs';
 import { deleteRecord, upsertRecord } from '../ingest/pipeline.mjs';
 import { extractFile, SUPPORTED } from '../ingest/extract.mjs';
+import { explainOAuthError, initialSharing } from './registry.mjs';
 
 export const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
+export const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.readonly';
+/** Each Google source asks only for its own read-only scope. */
+export const GOOGLE_SCOPES = Object.freeze({ gmail: GMAIL_SCOPE, gdrive: DRIVE_SCOPE });
+const GOOGLE_LABEL = { gmail: 'Gmail', gdrive: 'Google Drive' };
 const STATE_TTL_MS = 10 * 60 * 1000;
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
@@ -29,7 +34,7 @@ export function gmailEndpoint(pathAndQuery) {
 
 /** A failed Google call, with what Google actually said. Never carries tokens. */
 export class GmailApiError extends HttpError {
-  /** @param {number} status @param {string} code @param {string} message @param {{endpoint: string, httpStatus: number, reason: string | null, googleMessage: string | null}} diag */
+  /** @param {number} status @param {string} code @param {string} message @param {{endpoint: string, httpStatus: number, reason: string | null, providerMessage: string | null}} diag */
   constructor(status, code, message, diag) {
     super(status, code, message, diag);
     this.diag = diag;
@@ -50,24 +55,27 @@ export function classifyGoogleError(status, body, endpoint) {
   const googleMessage = err.message ? String(err.message).slice(0, 400) : typeof body?.error_description === 'string' ? body.error_description.slice(0, 400) : null;
   const meta = info.metadata || {};
   const project = String(meta.consumer || '').replace(/^projects\//, '') || (/project[_ ](?:number:)?(\d+)/.exec(googleMessage || '')?.[1] ?? '');
-  const diag = { endpoint, httpStatus: status, reason, googleMessage };
+  const diag = { endpoint, httpStatus: status, reason, providerMessage: googleMessage };
+  // The same Google errors come from Gmail and Drive; name the service the call went to.
+  const drive = endpoint.startsWith('drive.');
+  const service = drive ? 'Google Drive' : 'Gmail', apiName = drive ? 'Google Drive API' : 'Gmail API', apiId = drive ? 'drive.googleapis.com' : 'gmail.googleapis.com';
   const at = `(${endpoint}, HTTP ${status}${reason ? `, ${reason}` : ''})`;
   /** @type {{kind: string, retryable: boolean, waitMs: number | null, error: GmailApiError}} */
   const out = (kind, httpStatus, code, message, retryable = false, waitMs = null) => ({ kind, retryable, waitMs, error: new GmailApiError(httpStatus, code, `${message} ${at}`, diag) });
 
   if (status === 401) return out('token_rejected', 409, 'reconnect_required', 'Gmail rejected the access token. Reconnect the account.');
   if (reason === 'dailyLimitExceeded' || /per day/i.test(meta.quota_limit || '') || /per day/i.test(googleMessage || '')) {
-    return out('daily_quota', 429, 'gmail_daily_quota', `The Gmail API daily quota for Google Cloud project ${project || '(unknown)'} is used up. Sync again tomorrow, or request a higher quota in Google Cloud Console.`);
+    return out('daily_quota', 429, 'gmail_daily_quota', `The ${apiName} daily quota for Google Cloud project ${project || '(unknown)'} is used up. Sync again tomorrow, or request a higher quota in Google Cloud Console.`);
   }
   if (status === 429 || (reason && RATE_REASONS.has(reason))) {
     // Per-minute quota. Google reports a window start, but the limit behaves like a rolling minute, so always wait at least a full one.
     const windowStart = Number(meta.window_start_time);
     const waitMs = Math.max(61_000, Number.isFinite(windowStart) && windowStart > 0 ? windowStart * 1000 + 61_000 - Date.now() : 0);
-    return out('rate_limited', 429, 'gmail_rate_limited', `Gmail paused this sync because it hit Google's per-minute request limit${meta.quota_limit_value ? ` (${meta.quota_limit_value} units per minute per user)` : ''}. What was fetched so far is kept; sync again in a minute to continue.`, true, waitMs);
+    return out('rate_limited', 429, 'gmail_rate_limited', `${service} paused this sync because it hit Google's per-minute request limit${meta.quota_limit_value ? ` (${meta.quota_limit_value} units per minute per user)` : ''}. What was fetched so far is kept; sync again in a minute to continue.`, true, waitMs);
   }
   if (reason === 'accessNotConfigured' || reason === 'SERVICE_DISABLED') {
-    const link = `https://console.cloud.google.com/apis/library/gmail.googleapis.com${project ? `?project=${project}` : ''}`;
-    return out('api_disabled', 403, 'gmail_api_disabled', `The Gmail API is not enabled in Google Cloud project ${project || '(the project of this OAuth client)'}. Enable it at ${link}, wait a few minutes, then sync again.`);
+    const link = `https://console.cloud.google.com/apis/library/${apiId}${project ? `?project=${project}` : ''}`;
+    return out('api_disabled', 403, 'gmail_api_disabled', `The ${apiName} is not enabled in Google Cloud project ${project || '(the project of this OAuth client)'}. Enable it at ${link}, wait a few minutes, then sync again.`);
   }
   if (reason === 'insufficientPermissions' || reason === 'ACCESS_TOKEN_SCOPE_INSUFFICIENT') {
     return out('scope_insufficient', 403, 'gmail_scope_missing', 'The stored Gmail access does not include read permission. Reconnect Gmail and allow "Read your email messages".');
@@ -75,9 +83,9 @@ export function classifyGoogleError(status, body, endpoint) {
   if (reason === 'domainPolicy' || reason === 'failedPrecondition' || /mail service not enabled|domain administrator/i.test(googleMessage || '')) {
     return out('account_policy', 403, 'gmail_account_policy', 'This Google account does not allow Gmail API access. For a Google Workspace account, the administrator must allow it.');
   }
-  if (status >= 500) return out('google_unavailable', 502, 'gmail_unavailable', 'Gmail is temporarily unavailable. Sync again in a few minutes.', true);
-  if (status === 403) return out('forbidden', 403, 'gmail_forbidden', `Gmail refused the request: ${googleMessage || 'no reason given'}.`);
-  return out('error', 502, 'gmail_error', `Gmail returned an error${googleMessage ? `: ${googleMessage}` : ''}.`);
+  if (status >= 500) return out('google_unavailable', 502, 'gmail_unavailable', `${service} is temporarily unavailable. Sync again in a few minutes.`, true);
+  if (status === 403) return out('forbidden', 403, 'gmail_forbidden', `${service} refused the request: ${googleMessage || 'no reason given'}.`);
+  return out('error', 502, 'gmail_error', `${service} returned an error${googleMessage ? `: ${googleMessage}` : ''}.`);
 }
 
 export class GmailConnector {
@@ -99,35 +107,39 @@ export class GmailConnector {
   }
 
   /** Step 1: build Google's consent URL and remember the one-time state + PKCE verifier. */
-  authorize(user, { query = this.config.gmail.defaultQuery, shareWithRoles = [] } = {}) {
+  authorize(user, { kind = 'gmail', query = this.config.gmail.defaultQuery, shareWithRoles = [], visibility = 'owner' } = {}) {
     this.assertReady();
+    if (!(kind in GOOGLE_SCOPES)) throw new HttpError(400, 'invalid_kind', 'Choose Gmail or Google Drive.');
     const vault = /** @type {import('../security.mjs').Vault} */ (this.vault);
     const state = randomToken(24);
     const verifier = randomToken(48);
     const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
     this.db.run('DELETE FROM oauth_states WHERE expires_at < ?', nowIso());
     this.db.run('INSERT INTO oauth_states (state_hash, tenant_id, user_id, provider, verifier_ciphertext, options, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      sha256(state), user.tenantId, user.id, 'google', vault.seal(verifier), JSON.stringify({ query, shareWithRoles }), new Date(Date.now() + STATE_TTL_MS).toISOString());
+      sha256(state), user.tenantId, user.id, 'google', vault.seal(verifier), JSON.stringify({ kind, query, shareWithRoles, visibility }), new Date(Date.now() + STATE_TTL_MS).toISOString());
     const g = this.config.google;
     const url = new URL(g.authUrl);
     url.search = new URLSearchParams({
-      client_id: g.clientId, redirect_uri: g.redirectUri, response_type: 'code', scope: GMAIL_SCOPE,
-      access_type: 'offline', prompt: 'consent', include_granted_scopes: 'false', state, code_challenge: challenge, code_challenge_method: 'S256'
+      client_id: g.clientId, redirect_uri: g.redirectUri, response_type: 'code', scope: GOOGLE_SCOPES[kind],
+      // Google issues a refresh token only on a consent screen. Connecting (or reconnecting after a revoke) shows it once;
+      // after that the stored refresh token keeps the source working without asking again.
+      access_type: 'offline', prompt: 'consent', include_granted_scopes: 'false', login_hint: user.email || '', state, code_challenge: challenge, code_challenge_method: 'S256'
     }).toString();
-    return { url: url.toString(), scopes: [GMAIL_SCOPE] };
+    return { url: url.toString(), scopes: [GOOGLE_SCOPES[kind]] };
   }
 
   /** Step 2: Google redirects back with ?code&state. Exchange the code and create (or refresh) the source. */
-  async handleCallback(user, { code, state, error }) {
+  async handleCallback(user, { code, state, error, error_description: errorDescription }) {
     this.assertReady();
     const vault = /** @type {import('../security.mjs').Vault} */ (this.vault);
-    if (error) throw new HttpError(400, 'consent_declined', error === 'access_denied' ? 'Gmail access was not granted, so nothing was connected.' : `Google returned an error: ${String(error).slice(0, 100)}.`);
+    if (error) throw new HttpError(400, error === 'access_denied' ? 'consent_declined' : `oauth_${String(error).slice(0, 40)}`, explainOAuthError('google', String(error), String(errorDescription || '')));
     if (!code || !state) throw new HttpError(400, 'invalid_callback', 'The sign-in response from Google is incomplete. Start the connection again.');
     const row = this.db.get('SELECT * FROM oauth_states WHERE state_hash = ?', sha256(String(state)));
     this.db.run('DELETE FROM oauth_states WHERE state_hash = ?', sha256(String(state)));
     if (!row || row.expires_at < nowIso()) throw new HttpError(400, 'invalid_state', 'This connection link has expired or was already used. Start the connection again.');
     if (row.user_id !== user.id || row.tenant_id !== user.tenantId) throw new HttpError(403, 'state_mismatch', 'This connection was started by a different user.');
     const options = parseJson(row.options, {});
+    const kind = options.kind === 'gdrive' ? 'gdrive' : 'gmail';
     const g = this.config.google;
     const tokenRes = await this.fetch(g.tokenUrl, {
       method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
@@ -140,29 +152,46 @@ export class GmailConnector {
       throw new HttpError(502, 'token_exchange_failed', `Google did not accept the sign-in code${why ? ` (${why})` : ''}. Start the connection again.`);
     }
     const granted = String(tokens.scope || '').split(/\s+/);
-    if (!granted.includes(GMAIL_SCOPE)) {
+    if (!granted.includes(GOOGLE_SCOPES[kind])) {
       await this.revoke(tokens.refresh_token || tokens.access_token).catch(() => {});
-      throw new HttpError(400, 'scope_not_granted', 'Read access to Gmail was not granted on Google’s consent screen, so the account was not connected.');
+      throw new HttpError(400, 'scope_not_granted', `Read access to ${GOOGLE_LABEL[kind]} was not granted on Google’s consent screen, so the account was not connected.`);
     }
-    const profile = await this.api(tokens.access_token, '/users/me/profile');
-    const email = String(profile.emailAddress || '').toLowerCase();
+    // The consent itself succeeded. If the API cannot be reached yet (for example the Drive API is not enabled in the
+    // Cloud project), keep the authorization: the first sync records Google's exact reason, and once fixed, Sync now
+    // works without asking for consent again.
+    let email = '';
+    try {
+      email = String(kind === 'gmail'
+        ? (await this.api(tokens.access_token, '/users/me/profile')).emailAddress || ''
+        : (await this.driveAbout(tokens.access_token)).user?.emailAddress || '').toLowerCase();
+    } catch (err) {
+      if (!(err instanceof GmailApiError) || err.code === 'reconnect_required') throw err;
+      email = String(user.email || '').toLowerCase();
+    }
     const creds = { refreshToken: tokens.refresh_token || null, accessToken: tokens.access_token, expiresAt: Date.now() + (Number(tokens.expires_in) || 3600) * 1000 };
-    const existing = this.db.get("SELECT id, sync_cursor FROM sources WHERE tenant_id = ? AND type = 'gmail' AND owner_user_id = ? AND account_label = ?", user.tenantId, user.id, email);
-    const shareWithRoles = Array.isArray(options.shareWithRoles) ? options.shareWithRoles : [];
+    const existing = this.db.get('SELECT id, sync_cursor FROM sources WHERE tenant_id = ? AND type = ? AND owner_user_id = ? AND account_label = ?', user.tenantId, kind, user.id, email);
+    const sharing = initialSharing(options);
     const id = existing?.id ?? crypto.randomUUID();
     this.db.tx(() => {
       if (existing) {
         if (!creds.refreshToken) { const old = this.loadCredentials(id); creds.refreshToken = old?.refreshToken ?? null; }
-        this.db.run("UPDATE sources SET status = 'connected', last_error = NULL, scopes = ?, updated_at = ? WHERE id = ?", JSON.stringify(granted), nowIso(), id);
+        this.db.run("UPDATE sources SET status = CASE WHEN status = 'pending_approval' THEN status ELSE 'connected' END, last_error = NULL, scopes = ?, updated_at = ? WHERE id = ?", JSON.stringify(granted), nowIso(), id);
       } else {
         this.db.run(`INSERT INTO sources (id, tenant_id, type, name, status, owner_user_id, visibility, allowed_roles, config, scopes, account_label)
-          VALUES (?, ?, 'gmail', ?, 'connected', ?, ?, ?, ?, ?, ?)`,
-        id, user.tenantId, `Gmail: ${email}`, user.id, shareWithRoles.length ? 'roles' : 'owner', JSON.stringify(shareWithRoles),
-        JSON.stringify({ query: options.query ?? this.config.gmail.defaultQuery, indexAttachments: this.config.gmail.indexAttachments }), JSON.stringify(granted), email);
+          VALUES (?, ?, ?, ?, 'connected', ?, ?, ?, ?, ?, ?)`,
+        id, user.tenantId, kind, `${GOOGLE_LABEL[kind]}: ${email}`, user.id, sharing.visibility, JSON.stringify(sharing.allowedRoles),
+        JSON.stringify(kind === 'gmail' ? { query: options.query ?? this.config.gmail.defaultQuery, indexAttachments: this.config.gmail.indexAttachments } : {}), JSON.stringify(granted), email);
       }
       this.saveCredentials(id, creds);
     });
-    return { sourceId: id, email, reconnected: Boolean(existing) };
+    return { sourceId: id, email, kind, reconnected: Boolean(existing) };
+  }
+
+  /** The signed-in Drive user (drive.readonly allows reading it), to label a Drive source. */
+  async driveAbout(token) {
+    const res = await this.fetch(`${this.config.google.driveApiBase}/about?fields=user(emailAddress)`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(20000) });
+    if (!res.ok) throw classifyGoogleError(res.status, await res.json().catch(() => ({})), 'drive.about.get').error;
+    return res.json();
   }
 
   saveCredentials(sourceId, creds) {
@@ -189,7 +218,7 @@ export class GmailConnector {
     const json = await res.json().catch(() => ({}));
     if (!res.ok || !json.access_token) {
       const reason = typeof json.error === 'string' ? json.error : null;
-      const diag = { endpoint: 'oauth2.token (refresh)', httpStatus: res.status, reason, googleMessage: typeof json.error_description === 'string' ? json.error_description.slice(0, 400) : null };
+      const diag = { endpoint: 'oauth2.token (refresh)', httpStatus: res.status, reason, providerMessage: typeof json.error_description === 'string' ? json.error_description.slice(0, 400) : null };
       const message = `Google no longer accepts the stored access for this account${reason === 'invalid_grant' ? ' (it was revoked, or expired: refresh tokens of OAuth apps in "Testing" status last 7 days)' : ''}. Reconnect Gmail.`;
       this.db.run("UPDATE sources SET status = 'needs_attention', last_error = ? WHERE id = ?", message, source.id);
       throw new GmailApiError(409, 'reconnect_required', message, diag);

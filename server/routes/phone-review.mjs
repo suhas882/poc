@@ -21,7 +21,7 @@ export function registerPhoneReviewRoutes(router, s) {
     if (!user) throw new HttpError(401, 'unauthenticated', 'Sign in first.');
     if (!switches(db, user.tenantId, config).phoneLink) throw new HttpError(404, 'phonelink_off', 'Phone Link texts are switched off.');
   }
-  const mySources = (user) => db.all("SELECT * FROM sources WHERE tenant_id = ? AND owner_user_id = ? AND type = 'messages' AND status != 'disconnected'", user.tenantId, user.id)
+  const mySources = (user) => db.all("SELECT * FROM sources WHERE tenant_id = ? AND owner_user_id = ? AND type = 'messages' AND status NOT IN ('disconnected', 'pending_approval')", user.tenantId, user.id)
     .filter(src => String(parseJson(src.config, {}).provider || '').startsWith('phonelink'));
 
   /** Requests whose latest confirmed plan includes one of this employee's phone sources, with the employee's matches. */

@@ -10,7 +10,8 @@ import { createApp } from '../server/app.mjs';
 
 export async function startApp(env = {}, deps = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'prs-test-'));
-  const config = getConfig({ DATA_DIR: dir, OCR_ENABLED: 'false', REAL_SOURCES: 'true', RATE_LIMIT_API_PER_MINUTE: '10000', RATE_LIMIT_SEARCH_PER_MINUTE: '1000', ...env });
+  // GOOGLE_CLIENT_FILE points into the empty test folder, so a developer's own client_secret_*.json in the project is never picked up.
+  const config = getConfig({ DATA_DIR: dir, OCR_ENABLED: 'false', REAL_SOURCES: 'true', RATE_LIMIT_API_PER_MINUTE: '10000', RATE_LIMIT_SEARCH_PER_MINUTE: '1000', GOOGLE_CLIENT_FILE: path.join(dir, 'no-client-file.json'), ...env });
   const logs = [];
   const app = createApp(config, { log: (...a) => logs.push(a.join(' ')), ...deps });
   const server = http.createServer(app.handler);

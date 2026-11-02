@@ -41,6 +41,8 @@ export function switches(db, tenantId, config) {
   return {
     realSources: config.realSources,
     phoneLink: config.realSources && getSetting(db, tenantId, 'switch_phonelink', false) === true,
-    secondApproval: getSetting(db, tenantId, 'switch_approval', false) === true
+    secondApproval: getSetting(db, tenantId, 'switch_approval', false) === true,
+    // Sources connected by anyone but a Supervisor wait for a Supervisor's approval before they are synced or searched.
+    sourceApproval: config.realSources && getSetting(db, tenantId, 'switch_source_approval', false) === true
   };
 }

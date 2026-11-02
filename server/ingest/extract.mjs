@@ -14,6 +14,7 @@ export const SUPPORTED = Object.freeze({
   csv: { label: 'CSV', mime: ['text/csv', 'application/vnd.ms-excel'] },
   txt: { label: 'Text', mime: ['text/plain'] },
   md: { label: 'Text', mime: ['text/markdown'] },
+  json: { label: 'JSON', mime: ['application/json'] },
   png: { label: 'Image', mime: ['image/png'] },
   jpg: { label: 'Image', mime: ['image/jpeg'] },
   jpeg: { label: 'Image', mime: ['image/jpeg'] },
@@ -41,7 +42,7 @@ export function detectType(filename, buf) {
     (['jpg', 'jpeg'].includes(ext) && sniff === 'jpg') ||
     (['tif', 'tiff'].includes(ext) && sniff === 'tif') ||
     (ext === 'webp' && sniff === 'webp') ||
-    (['txt', 'csv', 'md', 'xml'].includes(ext) && sniff === 'text');
+    (['txt', 'csv', 'md', 'xml', 'json'].includes(ext) && sniff === 'text');
   return { ext, sniff, ok };
 }
 
@@ -51,6 +52,28 @@ function looksLikeText(buf) {
   let bad = 0;
   for (const b of sample) if (b === 0 || (b < 9) || (b > 13 && b < 32 && b !== 27)) bad++;
   return bad <= sample.length * 0.01;
+}
+
+/**
+ * JSON exports (from a records system, a form tool, an API dump): every value becomes a "path: value" line, so field
+ * names stay searchable next to their values. Invalid JSON is refused rather than indexed as raw text.
+ */
+export function extractJson(buf) {
+  let data;
+  try { data = JSON.parse(decodeText(buf).replace(/^﻿/, '')); } catch (err) {
+    const e = new Error(`This .json file is not valid JSON (${err instanceof Error ? err.message.slice(0, 120) : 'parse error'}).`);
+    /** @type {any} */ (e).status = 415;
+    throw e;
+  }
+  const lines = [];
+  const walk = (v, at) => {
+    if (lines.length >= 200_000) return;
+    if (v && typeof v === 'object') { for (const [k, x] of Array.isArray(v) ? v.entries() : Object.entries(v)) walk(x, at ? `${at}.${k}` : String(k)); return; }
+    if (v !== null && v !== undefined && String(v).trim()) lines.push(at ? `${at}: ${v}` : String(v));
+  };
+  walk(data, '');
+  const text = lines.join('\n');
+  return { text, documentType: 'JSON', status: text.trim() ? 'ok' : 'no_text', notes: [] };
 }
 
 export function decodeText(buf) {
@@ -193,7 +216,7 @@ export async function extractPdf(buf, { maxPages = 500 } = {}) {
     const text = pages.filter(Boolean).join('\n\n');
     const notes = [];
     if (doc.numPages > maxPages) notes.push(`Only the first ${maxPages} pages were indexed.`);
-    if (!text.trim()) notes.push('This PDF has no text layer (it is probably a scan). Run it through OCR software and upload the result, or upload page images to use OCR here.');
+    if (!text.trim()) notes.push('This PDF has no text layer (it is probably a scan).');
     return { text, title: info.Title || undefined, author: info.Author || undefined, createdAt: pdfDate(info.CreationDate), modifiedAt: pdfDate(info.ModDate), documentType: 'PDF', status: text.trim() ? 'ok' : 'no_text', notes, pageCount: doc.numPages };
   } finally {
     await task.destroy();
@@ -203,6 +226,57 @@ export async function extractPdf(buf, { maxPages = 500 } = {}) {
 /* ---------------- images (OCR) ---------------- */
 
 /** @param {Buffer} buf @param {{enabled: boolean, lang: string, langPath: string}} ocr */
+/**
+ * OCR for a scanned PDF: render each page with pdfjs onto @napi-rs/canvas (both installed with pdfjs-dist), then read
+ * it with the same tesseract.js engine used for images. Everything runs on this server; nothing is sent anywhere.
+ * @param {Buffer} buf @param {{enabled: boolean, lang: string, langPath: string, maxPdfPages?: number, renderScale?: number}} ocr
+ */
+export async function ocrPdf(buf, ocr) {
+  const maxPages = ocr.maxPdfPages ?? 20, scale = ocr.renderScale ?? 2;
+  let Tesseract, createCanvas;
+  try { Tesseract = (await import('tesseract.js')).default; } catch { return { text: '', status: 'ocr_unavailable', notes: ['OCR is not installed. Run "npm install tesseract.js" to read scanned PDFs.'] }; }
+  try { ({ createCanvas } = await import('@napi-rs/canvas')); } catch { return { text: '', status: 'ocr_unavailable', notes: ['Scanned PDFs need the page renderer (@napi-rs/canvas, installed with pdfjs-dist). Upload page images instead.'] }; }
+  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const task = pdfjs.getDocument({ data: new Uint8Array(buf), isEvalSupported: false, disableFontFace: true, useSystemFonts: false, verbosity: 0 });
+  const doc = await task.promise;
+  const worker = await Tesseract.createWorker(ocr.lang, 1, ocr.langPath ? { langPath: ocr.langPath } : {});
+  try {
+    const pages = [], confidence = [];
+    const n = Math.min(doc.numPages, maxPages);
+    for (let i = 1; i <= n; i++) {
+      const page = await doc.getPage(i);
+      const viewport = page.getViewport({ scale });
+      const canvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+      await page.render(/** @type {any} */ ({ canvas, canvasContext: ctx, viewport })).promise;
+      const { data } = await worker.recognize(await canvas.encode('png'));
+      pages.push(String(data.text || '').trim());
+      confidence.push(Number(data.confidence ?? 0));
+      page.cleanup();
+    }
+    const text = pages.filter(Boolean).join('\n\n');
+    const avg = confidence.length ? Math.round(confidence.reduce((a, b) => a + b, 0) / confidence.length) : 0;
+    const notes = text ? [`Text read by OCR from ${n} scanned page${n === 1 ? '' : 's'} (average confidence ${avg}%). Check important passages against the original.`] : ['OCR found no readable text in this scanned PDF.'];
+    if (doc.numPages > maxPages) notes.push(`Only the first ${maxPages} of ${doc.numPages} pages were read by OCR (OCR_MAX_PDF_PAGES).`);
+    return { text, status: text ? 'ok' : 'no_text', notes };
+  } catch (err) {
+    return { text: '', status: 'ocr_unavailable', notes: [`OCR could not read this scanned PDF: ${err instanceof Error ? err.message.slice(0, 160) : 'unknown error'}.`] };
+  } finally {
+    await worker.terminate();
+    await task.destroy();
+  }
+}
+
+/** A PDF's own text layer first; only when it has none and OCR is on, read the page images. */
+async function extractPdfWithOcr(buf, ocr) {
+  const ex = await extractPdf(buf);
+  if (ex.status !== 'no_text') return ex;
+  if (!ocr?.enabled) return { ...ex, status: 'ocr_unavailable', notes: [...ex.notes, 'OCR is switched off (OCR_ENABLED=false), so its text is not searchable.'] };
+  const o = await ocrPdf(buf, ocr);
+  return { ...ex, text: o.text, status: o.status, documentType: o.text ? 'PDF (OCR)' : 'PDF', notes: [...ex.notes, ...o.notes] };
+}
+
 export async function extractImage(buf, ocr) {
   if (!ocr.enabled) return { text: '', documentType: 'Image', status: 'ocr_unavailable', notes: ['OCR is switched off (OCR_ENABLED=false). The image was stored but its text is not searchable.'] };
   let Tesseract;
@@ -241,10 +315,11 @@ export async function extractFile(filename, buf, opts) {
     throw err;
   }
   switch (ext) {
-    case 'pdf': return extractPdf(buf);
+    case 'pdf': return extractPdfWithOcr(buf, opts?.ocr);
     case 'docx': return extractDocx(buf);
     case 'xlsx': return extractXlsx(buf);
     case 'csv': return extractCsv(buf);
+    case 'json': return extractJson(buf);
     case 'txt': case 'md': { const text = decodeText(buf); return { text, documentType: 'Text', status: text.trim() ? 'ok' : 'no_text', notes: [] }; }
     default: return extractImage(buf, opts.ocr);
   }

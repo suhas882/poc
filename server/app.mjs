@@ -17,6 +17,11 @@ import { createAnthropicProvider } from './ai/anthropic.mjs';
 import { withUsageTracking } from './ai/provider.mjs';
 import { createEmbedder } from './search/embeddings.mjs';
 import { GmailConnector } from './connectors/gmail.mjs';
+import { MicrosoftConnector } from './connectors/microsoft.mjs';
+import { GoogleDriveConnector } from './connectors/gdrive.mjs';
+import { SignIn } from './sso.mjs';
+import { registerAccessRequestRoutes } from './routes/access-requests.mjs';
+import { createRegistry } from './connectors/registry.mjs';
 import { DatabaseConnector } from './connectors/database.mjs';
 import { PhoneLinkConnector, isPhoneLink } from './connectors/phonelink.mjs';
 import { startSync } from './routes/sources.mjs';
@@ -34,7 +39,7 @@ import { applyRetention } from './retention.mjs';
 import { consentRequired } from './consent.mjs';
 
 /** Static files the server may send. Nothing else on disk is reachable. */
-const PAGES = ['index.html', 'search.html', 'evaluation.html', 'sources.html', 'history.html', 'audit.html', 'settings.html', 'login.html', 'consent.html', 'report.html', 'phone-review.html', 'ai-review.html'];
+const PAGES = ['index.html', 'search.html', 'evaluation.html', 'sources.html', 'history.html', 'audit.html', 'settings.html', 'login.html', 'consent.html', 'report.html', 'phone-review.html', 'ai-review.html', 'request-access.html'];
 const STATIC = new Map([
   ...PAGES.map(p => [`/${p}`, [p, 'text/html; charset=utf-8']]),
   ['/', ['index.html', 'text/html; charset=utf-8']],
@@ -42,6 +47,19 @@ const STATIC = new Map([
   ['/favicon.svg', ['favicon.svg', 'image/svg+xml']]
 ].map(([k, v]) => [k, /** @type {[string, string]} */ (v)]));
 const CLIENT_JS = /^\/client\/[a-z0-9-]+(?:\/[a-z0-9-]+)?\.js$/;
+
+/**
+ * The client address from X-Forwarded-For, behind a proxy we trust. The last entry is the one our proxy added
+ * (earlier ones come from the client and can be forged). Some proxies, Azure App Service among them, add the port
+ * ("203.0.113.7:51234", "[2001:db8::1]:443"); it is removed so one visitor is one address.
+ */
+export function forwardedIp(header) {
+  const last = String(header || '').split(',').pop()?.trim() || '';
+  const v6 = /^\[([^\]]+)\](?::\d+)?$/.exec(last);
+  if (v6) return v6[1];
+  const v4 = /^(\d{1,3}(?:\.\d{1,3}){3})(?::\d+)?$/.exec(last);
+  return v4 ? v4[1] : last;
+}
 
 /**
  * @param {import('./config.mjs').AppConfig} config
@@ -66,6 +84,7 @@ export function createApp(config, deps = {}) {
   const services = {
     config, db, vault, audit, sessions, ai, embedder, embedderError, log, deps,
     gmail: new GmailConnector({ db, config, vault, fetch: doFetch }),
+    microsoft: new MicrosoftConnector({ db, config, vault, fetch: doFetch }),
     phonelink: new PhoneLinkConnector({ db, config }),
     database: new DatabaseConnector({ db, config, vault, connectOverride: deps.connectDatabase, sqliteDir: deps.sqliteConnectorDir }),
     limits: {
@@ -76,6 +95,9 @@ export function createApp(config, deps = {}) {
     /** @type {Map<string, Promise<unknown>>} sync jobs in flight, by source id */
     running: new Map()
   };
+  services.gdrive = new GoogleDriveConnector({ db, config, google: services.gmail, fetch: doFetch });
+  services.signin = new SignIn({ db, config, vault, fetch: doFetch });
+  services.connectors = createRegistry(services);
 
   const router = new Router();
   registerAuthRoutes(router, services);
@@ -87,14 +109,15 @@ export function createApp(config, deps = {}) {
   registerPhoneReviewRoutes(router, services);
   registerAdminRoutes(router, services);
   registerAgentRoutes(router, services);
+  registerAccessRequestRoutes(router, services);
 
   /** @param {import('node:http').IncomingMessage} req @param {import('node:http').ServerResponse} res */
   async function handler(req, res) {
     const url = new URL(req.url || '/', 'http://localhost');
     // Behind a proxy, the last X-Forwarded-For entry is the one the proxy added; earlier entries come from the client and can be forged.
-    const ip = (config.trustProxy ? String(req.headers['x-forwarded-for'] || '').split(',').pop()?.trim() : '') || req.socket.remoteAddress || '';
+    const ip = (config.trustProxy ? forwardedIp(req.headers['x-forwarded-for']) : '') || req.socket.remoteAddress || '';
     try {
-      if (url.pathname === '/api/health' && req.method === 'GET') return sendJson(res, 200, { ok: true, data: { status: 'ok', demoOnly: config.demoOnly } });
+      if (url.pathname === '/api/health' && req.method === 'GET') return sendJson(res, 200, { ok: true, data: { status: 'ok', demoOnly: !config.realSources, realSources: config.realSources } });
       if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/oauth/')) {
         const user = sessions.fromRequest(req);
         const rate = services.limits.api.take(user ? `u:${user.id}` : `ip:${ip}`);
@@ -125,7 +148,7 @@ export function createApp(config, deps = {}) {
 
   // Phone Link: pick up new texts automatically whenever Phone Link's file changes.
   const phoneTick = () => {
-    for (const src of db.all("SELECT * FROM sources WHERE type = 'messages' AND status != 'disconnected'")) {
+    for (const src of db.all("SELECT * FROM sources WHERE type = 'messages' AND status NOT IN ('disconnected', 'pending_approval')")) {
       try { if (isPhoneLink(src) && !services.running.has(src.id) && services.phonelink.isStale(src)) startSync(services, src, null, 'automatic'); }
       catch (err) { log('[phonelink] auto-sync skipped:', err instanceof Error ? err.message : err); }
     }
@@ -174,8 +197,23 @@ function registerAuthRoutes(router, s) {
       pack: pack ? { id: pack.id, name: pack.name, label: pack.label } : null,
       switches: user ? switches(db, user.tenantId, config) : null,
       consentRequired: user && config.realSources && !tenant?.is_demo ? consentRequired(db, user) : false,
-      csrfToken: user?.csrfToken ?? null
+      csrfToken: user?.csrfToken ?? null,
+      // Which "Continue with …" buttons the sign-in page shows.
+      signIn: s.signin.available(),
+      // Provider accounts linked to this person (shown on Connected Sources; account IDs stay on the server).
+      identities: user ? s.signin.identities(user.id) : []
     });
+  });
+
+  /** Start signing in with Google or Microsoft. A top-level navigation; the encrypted cookie carries state, PKCE and nonce. */
+  router.on('GET', '/oauth/signin/:provider', ({ res, params, url, ip }) => {
+    const provider = params.provider === 'microsoft' ? 'microsoft' : params.provider === 'google' ? 'google' : null;
+    if (!provider) throw new HttpError(404, 'not_found', 'Unknown sign-in provider.');
+    const limit = s.limits.login.take(`sso|${ip}`);
+    if (!limit.allowed) throw new HttpError(429, 'too_many_attempts', `Too many sign-in attempts. Try again in ${Math.ceil(limit.retryAfter / 60)} minutes.`);
+    const { url: to, cookie } = s.signin.start(provider, url.searchParams.get('next') || '/');
+    res.writeHead(302, { Location: to, 'Set-Cookie': cookie, 'Cache-Control': 'no-store', ...SECURITY_HEADERS });
+    res.end();
   });
 
   /* Demo sign-in: invented staff accounts in a private demo organization that only holds Tier 0 data. */
@@ -266,6 +304,7 @@ function registerAuthRoutes(router, s) {
       embeddings: { configured: Boolean(s.embedder), provider: s.embedder?.provider ?? null, model: s.embedder?.model ?? null, error: s.embedderError, recordContentApproved: config.embeddings.recordContentApproved },
       realSources: config.realSources,
       gmail: { configured: s.gmail.configured, redirectUri: config.google.redirectUri },
+      microsoft: { configured: s.microsoft.configured, redirectUri: config.microsoft.redirectUri, tenant: config.microsoft.tenant },
       encryption: { configured: Boolean(s.vault), source: config.encryptionKey ? 'environment' : s.vault ? 'development key file' : 'missing' },
       ocr: { enabled: config.ocr.enabled, installed: has('tesseract.js') },
       drivers: { postgres: has('pg'), mysql: has('mysql2'), sqlite: true },

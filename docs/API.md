@@ -13,15 +13,21 @@ Requests that change data need the session cookie and an `X-CSRF-Token` header. 
 | POST | `/api/auth/logout` | signed in | End the session. |
 | GET | `/api/system/status` | sources.read | What is configured: Claude, embeddings, Gmail, encryption, OCR, drivers. |
 | GET | `/api/users` · POST `/api/users` · PATCH `/api/users/:id` | users.manage | List, create, change role, disable, reset password. |
-| GET | `/api/connectors` | sources.read | Connector catalog with honest availability. |
-| GET | `/api/sources` | sources.read | Sources visible to the user, with status, counts, scopes and sharing. |
+| GET | `/api/connectors` | sources.read | Connector catalog and source discovery: each entry has `category`, `status` (server setup) and `lifecycle` for this user (`authorization_required`, `pending_approval`, `connected`, `reauthorization_required`, `needs_setup`, `unsupported`, `not_connected`), plus `approvalRequired`. Discovery never connects anything. |
+| GET | `/api/sources` | sources.read | Sources visible to the user, with status, `lifecycle` (`pending_approval`, `connected`, `syncing`, `indexed`, `reauthorization_required`, `error`, `disconnected`), counts, scopes, sharing, `lastSuccessAt`, `credentials` (`stored_encrypted` or `none`, never the secret) and `canApprove`. A source waiting for approval is visible only to its owner and Supervisors. |
 | PATCH | `/api/sources/:id` | sources.manage (owner or admin) | `{name?, visibility?, allowedRoles?, query?}`. |
 | POST | `/api/sources/:id/sync` | sources.manage | Start a background sync (`{full?: true}`). Returns `202 {jobId}`. |
-| GET | `/api/sources/:id/jobs` | sources.read | Last 20 sync jobs. |
+| GET | `/api/sources/:id/jobs` | sources.read | Last 20 sync jobs, with diagnostics: `apiStatus`, `errorCode`, `errorReason`, `errorEndpoint`, `providerMessage`, `listed`, `attempted`, `fetched`, `apiCalls`, `rateLimitWaits`, `retries`. Quota and outage failures retry on their own (`trigger: retry`). |
+| POST | `/api/sources/:id/verify` | sources.manage (owner or admin) | Check access without reading content: stored sign-in accepted, permissions granted (Google tokeninfo), API reachable. Audited as `source.verified`. |
+| GET | `/oauth/signin/google` · `/oauth/signin/microsoft` | none | Start "Continue with …" sign-in (`?next=/path`). Existing users only. The callbacks are the connectors' `/oauth/*/callback`. |
+| POST | `/api/sources/:id/approve` | settings.manage | Approve a source waiting for approval; starts its first sync. |
+| POST | `/api/sources/:id/reject` | settings.manage | Reject a waiting source: deletes it, its credentials and anything stored. |
 | DELETE | `/api/sources/:id` | sources.manage | Disconnect: revoke at the provider, delete credentials, records and files. |
-| POST | `/api/connectors/gmail/authorize` | sources.manage | `{query?, shareWithRoles?}` → `{url}` for Google's consent page. |
+| POST | `/api/connectors/gmail/authorize` | sources.manage | `{kind?: 'gmail' \| 'gdrive', query?, shareWithRoles?}` → `{url}` for Google's consent page. Scope is `gmail.readonly` or `drive.readonly`. |
 | GET | `/oauth/google/callback` | signed in | OAuth redirect target. Redirects to `/sources.html?connected=…` or `?error=…`. |
-| POST | `/api/uploads?kind=document\|messages&sourceId=` | uploads.create | Raw file body plus an `X-File-Name` header. Returns the extraction result. |
+| POST | `/api/connectors/microsoft/authorize` | sources.manage | `{kind: 'outlook' \| 'onedrive' \| 'sharepoint', siteUrl?, shareWithRoles?}` → `{url}` for Microsoft's sign-in. `siteUrl` must be an `https://….sharepoint.com` address. |
+| GET | `/oauth/microsoft/callback` | signed in | OAuth redirect target for Microsoft. |
+| POST | `/api/uploads?kind=document\|messages&sourceId=` | uploads.create | Raw file body plus an `X-File-Name` header (PDF, DOCX, XLSX, CSV, TXT, MD, JSON, images). Scanned with ClamAV first when `CLAMAV_HOST` is set (`422 malware_found`, or `503` when required and unreachable). Returns the extraction result and `scan`. |
 | GET | `/api/sources/:id/records` | records.read | Records in a source (for managing uploads). |
 | DELETE | `/api/records/:id` | sources.manage | Delete an uploaded document or message record. |
 | POST | `/api/connectors/database/inspect` | sources.manage | Test a connection and list tables and columns. |
@@ -38,7 +44,7 @@ Requests that change data need the session cookie and an `X-CSRF-Token` header. 
 | GET | `/api/records/:id/original` | records.read | Original uploaded file (audited). |
 | PUT | `/api/searches/:id/evaluations/:recordId` | evaluate.write | `{judgment: relevant\|not_relevant\|unsure, note?}`. |
 | GET | `/api/evaluations/summary?scope=all&mode=` | evaluate.write or history.read_all | Metrics from staff decisions, false positives, history. |
-| GET | `/api/audit` · `/api/audit/export` | audit.read | Filter by `action, category, userId, outcome, from, to`. CSV export is audited. |
+| GET | `/api/audit` · `/api/audit/export` | audit.read | Filter by `action, category, userId, outcome, targetId, from, to` (`targetId` = one source's trail). CSV export is audited. |
 | GET | `/api/settings` · PATCH `/api/settings` | signed in · settings.manage | Organization defaults. |
 | POST | `/api/settings/retention/apply` | settings.manage | Run the retention purge now. |
 | GET | `/api/usage` | usage.read | Claude calls, tokens and estimated cost for the last 30 days. |
