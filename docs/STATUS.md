@@ -70,5 +70,6 @@ The original README sets two gates: no model calls until Bellevue's approved mod
 ## PC sync helper (Phone Link → hosted server)
 
 - `agent/phonelink-sync.mjs` and `phonelink-sync.bat` read Phone Link on the Windows PC and send changed conversation-days to the hosted site over HTTPS, using a revocable per-PC key (only its hash is stored). The key can only add texts to its own private source.
+- Pairing by code: the helper shows a short code that the person types on the website, and then collects its key once, so the key is never copied by hand. Codes last 10 minutes, are stored only as hashes, and wrong guesses are rate limited.
 - It refuses plain http to remote hosts, only sends days whose content changed, and resends everything if the server's source is empty (for example after Render's free disk was wiped).
 - Covered by `tests/agent.test.mjs`, which runs the real helper program against the app.

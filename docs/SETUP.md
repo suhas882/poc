@@ -197,8 +197,10 @@ The app stores everything in one SQLite file (`DATA_DIR/records.db`). That folde
 
 A hosted server cannot read files on your PC, so Phone Link texts reach it through a small helper on the Windows PC:
 
-1. On the website, go to Connected Sources → Android texts (Phone Link) → **PC sync helper**, and create a key (shown once).
-2. On the Windows PC where Phone Link is set up, in this project folder, double-click `phonelink-sync.bat`. Paste the site's https address and the key.
+1. On the Windows PC where Phone Link is set up, in this project folder, double-click `phonelink-sync.bat`. Enter the site's https address, then press Enter to pair. The helper shows a pairing code such as `ABCD-2345`.
+2. On the website, go to Connected Sources → Android texts (Phone Link) → **PC sync helper**, type the code and confirm. The helper receives its key by itself within a few seconds. Codes expire after 10 minutes and work once.
 3. It sends your texts, then checks for new ones every few minutes. To run it at sign-in, put a shortcut to `phonelink-sync.bat` in `shell:startup`.
 
-Options: `phonelink-sync.bat --once` (send what is new, then exit), `--full` (resend everything), `--setup` (change the address or key). The key is saved in `agent/phonelink-sync.json`, which is in `.gitignore`. Keep it private, and revoke it on the website if the PC is lost. If the server's data was reset, the helper notices the source is empty and sends everything again.
+You can still create a key on the website (under "Or create a key to paste into the helper") and paste it at step 1 instead of pressing Enter.
+
+Options: `phonelink-sync.bat --once` (send what is new, then exit), `--full` (resend everything), `--pair` (pair again with a new code, for example after revoking the key), `--setup` (change the address, then pair or paste a key). The key is saved in `agent/phonelink-sync.json`, which is in `.gitignore`. Keep it private, and revoke it on the website if the PC is lost. If the server's data was reset, the helper notices the source is empty and sends everything again.

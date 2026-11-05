@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -91,4 +91,100 @@ test('PC sync helper refuses plain http to a remote site', async () => {
   fs.writeFileSync(path.join(dir, 'phonelink-sync.json'), JSON.stringify({ url: 'http://example.com', key: 'prs_agent_' + 'a'.repeat(43), intervalMinutes: 3 }));
   await assert.rejects(run(process.execPath, ['agent/phonelink-sync.mjs', '--once'], { env: { ...process.env, PHONELINK_SYNC_DIR: dir } }), (err) => /Refusing to send texts over plain http/.test(err.stderr));
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('PC sync helper: pairing by code', async (t) => {
+  const env = await startApp();
+  t.after(() => env.close());
+  const c = env.client();
+  await c.setup();
+  const anon = env.client();
+
+  let r = await anon.post('/api/agent/pair/start', { pcName: 'OFFICE-PC' });
+  assert.equal(r.status, 201);
+  const { deviceCode, userCode, interval } = r.data.data;
+  assert.match(userCode, /^[A-Z2-9]{4}-[A-Z2-9]{4}$/);
+  assert.ok(interval >= 1);
+  assert.ok(!JSON.stringify(env.app.db.all('SELECT * FROM agent_pairings')).includes(deviceCode), 'only hashes are stored');
+
+  r = await anon.post('/api/agent/pair/poll', { deviceCode });
+  assert.equal(r.data.data.status, 'pending');
+  r = await anon.post('/api/agent/pair/poll', { deviceCode: 'nope' });
+  assert.equal(r.status, 404);
+
+  // Only a signed-in person can approve, with the confirmation and the right code.
+  assert.equal((await anon.post('/api/agent-pairings', { code: userCode, acknowledged: true })).status, 401);
+  assert.equal((await c.post('/api/agent-pairings', { code: userCode })).status, 400);
+  assert.equal((await c.post('/api/agent-pairings', { code: 'ZZZZ-ZZZZ', acknowledged: true })).status, 404);
+  // Lowercase, spaces and missing dash are fine; the PC's own name is used when none is given.
+  r = await c.post('/api/agent-pairings', { code: ` ${userCode.replace('-', '').toLowerCase()} `, acknowledged: true });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  assert.equal(r.data.data.name, 'OFFICE-PC');
+  assert.equal((await c.post('/api/agent-pairings', { code: userCode, acknowledged: true })).status, 404, 'a code works once');
+
+  r = await anon.post('/api/agent/pair/poll', { deviceCode });
+  assert.equal(r.data.data.status, 'approved');
+  const token = r.data.data.token;
+  assert.match(token, /^prs_agent_/);
+  assert.equal((await anon.post('/api/agent/pair/poll', { deviceCode })).status, 404, 'the key is handed out once');
+  r = await anon.req('GET', '/api/agent/whoami', undefined, { authorization: `Bearer ${token}` });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.data.keyName, 'OFFICE-PC');
+  assert.equal((await c.get('/api/agent-tokens')).data.data.length, 1);
+
+  // Expired codes are refused on both sides.
+  r = await anon.post('/api/agent/pair/start', {});
+  env.app.db.run('UPDATE agent_pairings SET expires_at = ? WHERE status = ?', '2000-01-01T00:00:00.000Z', 'pending');
+  assert.equal((await c.post('/api/agent-pairings', { code: r.data.data.userCode, acknowledged: true })).status, 404);
+  assert.equal((await anon.post('/api/agent/pair/poll', { deviceCode: r.data.data.deviceCode })).status, 410);
+
+  // Too many wrong codes are throttled per person.
+  let last;
+  for (let i = 0; i < 11; i++) last = await c.post('/api/agent-pairings', { code: 'ZZZZ-ZZZ' + 'ABCDEFGHJKM'[i], acknowledged: true });
+  assert.equal(last.status, 429);
+
+  const actions = (await c.get('/api/audit?pageSize=100')).data.data.map(e => e.action);
+  for (const a of ['agent.pairing_approved', 'agent.key_created']) assert.ok(actions.includes(a), a);
+});
+
+test('PC sync helper program pairs with a code', async (t) => {
+  const env = await startApp();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'helper-'));
+  t.after(async () => { await env.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+  const c = env.client();
+  await c.setup();
+  const phone = path.join(dir, 'phone.db');
+  const db = new DatabaseSync(phone);
+  db.exec(`CREATE TABLE message (message_id INTEGER PRIMARY KEY, thread_id INT, from_address TEXT, recipient_list TEXT, body TEXT, timestamp INT, type INT);`);
+  db.prepare('INSERT INTO message (thread_id, from_address, recipient_list, body, timestamp, type) VALUES (?, ?, ?, ?, ?, ?)').run(3, '+15550002222', '', 'Budget meeting moved', filetime('2026-10-21T09:00:00Z'), 1);
+  db.close();
+
+  const child = spawn(process.execPath, ['agent/phonelink-sync.mjs', '--once'], { env: { ...process.env, PHONELINK_DB_PATH: phone, PHONELINK_SYNC_DIR: dir } });
+  let stdout = '', stderr = '';
+  child.stderr.on('data', d => { stderr += d; });
+  const answered = new Set();
+  const done = new Promise((resolve) => child.on('exit', resolve));
+  const approved = new Promise((resolve, reject) => {
+    child.stdout.on('data', async (d) => {
+      stdout += d;
+      const answer = (prompt, text) => { if (!answered.has(prompt) && stdout.includes(prompt)) { answered.add(prompt); child.stdin.write(text + '\n'); } };
+      answer('Website address', env.base);
+      answer('Press Enter to pair', '');
+      answer('how many minutes', '');
+      const m = /Pairing code:\s+([A-Z0-9-]+)/.exec(stdout);
+      if (m && !answered.has('code')) {
+        answered.add('code');
+        const r = await c.post('/api/agent-pairings', { code: m[1], name: 'Test PC', acknowledged: true });
+        r.status === 200 ? resolve(r) : reject(new Error(JSON.stringify(r.data)));
+      }
+    });
+  });
+  await approved;
+  const code = await done;
+  assert.equal(code, 0, stdout + stderr);
+  assert.match(stdout, /Paired as "Test PC"/);
+  assert.match(stdout, /Sent 1 texts: 1 new/);
+  const saved = JSON.parse(fs.readFileSync(path.join(dir, 'phonelink-sync.json'), 'utf8'));
+  assert.match(saved.key, /^prs_agent_/);
+  assert.equal(saved.url, env.base);
 });

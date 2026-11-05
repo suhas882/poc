@@ -5,10 +5,14 @@
 //   phonelink-sync.bat            set up on first run, then keep checking for new texts
 //   phonelink-sync.bat --once     send what is new and exit
 //   phonelink-sync.bat --full     send everything again (for example after the server's data was reset)
-//   phonelink-sync.bat --setup    change the site address or key
+//   phonelink-sync.bat --setup    change the site address, or pair again
+//   phonelink-sync.bat --pair     pair again with a code (keeps the site address)
 //
 // Safety: it only reads Phone Link's copy of your texts (never the live file, never your phone), only sends to
 // the site you enter, only over HTTPS, and the key can only add texts to your own private source.
+//
+// Pairing: the helper shows a short code (like ABCD-2345). Type it on the website in Connected Sources -> PC sync
+// helper, and the helper receives its key by itself. Pasting a key from the website still works too.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -30,43 +34,75 @@ const log = (...a) => console.log(`[${new Date().toLocaleTimeString()}]`, ...a);
 const readJsonFile = (f, fallback) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return fallback; } };
 const writeJsonFile = (f, v) => fs.writeFileSync(f, JSON.stringify(v, null, 2), { mode: 0o600 });
 
-async function setup(existing) {
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  console.log('\nSet up the PC sync helper. You need two things from the website:');
-  console.log('  1. Its address, for example https://your-app.onrender.com');
-  console.log('  2. A helper key from Connected Sources -> Android texts (Phone Link) -> PC sync helper\n');
-  let url = (await rl.question(`Website address${existing?.url ? ` [${existing.url}]` : ''}: `)).trim() || existing?.url || '';
+async function setup(existing, { pairOnly = false } = {}) {
+  let url = existing?.url || '', key = '', minutes = existing?.intervalMinutes || 3;
+  if (!pairOnly) {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    console.log('\nSet up the PC sync helper. You need the website address, for example https://your-app.onrender.com');
+    url = (await rl.question(`Website address${existing?.url ? ` [${existing.url}]` : ''}: `)).trim() || existing?.url || '';
+    console.log('\nNext the helper shows a pairing code to type on the website.');
+    console.log('(If you already created a helper key on the website, paste it here instead.)');
+    key = (await rl.question('Press Enter to pair with a code, or paste a helper key: ')).trim();
+    const m = Number((await rl.question(`Check for new texts every how many minutes? [${minutes}]: `)).trim() || minutes);
+    rl.close();
+    if (Number.isFinite(m) && m >= 1) minutes = Math.round(m);
+  }
   url = url.replace(/\/+$/, '');
   if (url && !/^https?:\/\//i.test(url)) url = `https://${url}`;
-  const key = (await rl.question('Helper key (starts with prs_agent_): ')).trim() || existing?.key || '';
-  const minutes = Number((await rl.question('Check for new texts every how many minutes? [3]: ')).trim() || 3);
-  rl.close();
-  const cfg = { url, key, intervalMinutes: Number.isFinite(minutes) && minutes >= 1 ? Math.round(minutes) : 3 };
+  checkUrl(url);
+  if (!key) key = await pair(url);
+  const cfg = { url, key, intervalMinutes: minutes };
   writeJsonFile(CONFIG_FILE, cfg);
   console.log(`\nSaved to ${CONFIG_FILE}. Keep this file private: it contains your key.\n`);
   return cfg;
 }
 
-function checkConfig(cfg) {
-  if (!/^https?:\/\/[^/\s]+/i.test(cfg.url || '')) throw new Error('The website address is missing. Run phonelink-sync.bat --setup.');
-  if (!/^prs_agent_[A-Za-z0-9_-]{20,}$/.test(cfg.key || '')) throw new Error('The helper key is missing or incomplete. Run phonelink-sync.bat --setup.');
-  const u = new URL(cfg.url);
+/** Ask the site for a pairing code, show it, and wait until someone types it on the website. Returns the key. */
+async function pair(url) {
+  const start = await call({ url }, 'POST', '/api/agent/pair/start', { pcName: os.hostname().slice(0, 60), helperVersion: VERSION });
+  const site = (start.verifyUrl && /^https?:\/\//.test(start.verifyUrl) ? start.verifyUrl : url).replace(/\/+$/, '');
+  console.log('\n  ------------------------------------------');
+  console.log(`    Pairing code:   ${start.userCode}`);
+  console.log('  ------------------------------------------');
+  console.log(`  1. Open ${site} and sign in.`);
+  console.log('  2. Go to Connected Sources -> Android texts (Phone Link) -> PC sync helper.');
+  console.log(`  3. Type the code above. It expires in ${Math.round(start.expiresIn / 60)} minutes.\n`);
+  const end = Date.now() + start.expiresIn * 1000 + 30_000;
+  const every = Math.max(1, Number(start.interval) || 3) * 1000;
+  while (Date.now() < end) {
+    await new Promise(r => setTimeout(r, every));
+    let r;
+    try { r = await call({ url }, 'POST', '/api/agent/pair/poll', { deviceCode: start.deviceCode }); }
+    catch (err) { if (err.retry) { log(err.message); continue; } throw Object.assign(err, { fatal: true }); }
+    if (r.status === 'approved') { log(`Paired as "${r.keyName}" for ${r.userName}.`); return r.token; }
+  }
+  throw Object.assign(new Error('The pairing code expired. Run phonelink-sync.bat --pair to get a new one.'), { fatal: true });
+}
+
+function checkUrl(url) {
+  if (!/^https?:\/\/[^/\s]+/i.test(url || '')) throw new Error('The website address is missing. Run phonelink-sync.bat --setup.');
+  const u = new URL(url);
   const local = ['localhost', '127.0.0.1', '[::1]'].includes(u.hostname);
   if (u.protocol !== 'https:' && !local) throw new Error(`Refusing to send texts over plain http to ${u.host}. Use the https:// address of your site.`);
+}
+
+function checkConfig(cfg) {
+  checkUrl(cfg.url);
+  if (!/^prs_agent_[A-Za-z0-9_-]{20,}$/.test(cfg.key || '')) throw new Error('The helper key is missing or incomplete. Run phonelink-sync.bat --pair to pair again.');
 }
 
 async function call(cfg, method, route, body) {
   let res;
   try {
     res = await fetch(cfg.url + route, {
-      method, headers: { authorization: `Bearer ${cfg.key}`, ...(body ? { 'content-type': 'application/json' } : {}) },
+      method, headers: { ...(cfg.key ? { authorization: `Bearer ${cfg.key}` } : {}), ...(body ? { 'content-type': 'application/json' } : {}) },
       body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(120_000)
     });
   } catch (err) {
     throw Object.assign(new Error(`Could not reach ${cfg.url} (${err?.cause?.code || err?.name || 'network error'}). Will try again.`), { retry: true });
   }
   const json = await res.json().catch(() => null);
-  if (res.status === 401) throw Object.assign(new Error(json?.error?.message || 'The helper key was refused.'), { fatal: true });
+  if (res.status === 401) throw Object.assign(new Error(`${json?.error?.message || 'The helper key was refused.'} To pair this PC again, run phonelink-sync.bat --pair.`), { fatal: true });
   if (!res.ok || !json?.ok) throw Object.assign(new Error(json?.error?.message || `The site answered HTTP ${res.status}.`), { retry: res.status >= 500 || res.status === 429 });
   return json.data;
 }
@@ -118,6 +154,7 @@ async function main() {
   console.log(`Public Records Search - PC sync helper ${VERSION}`);
   let cfg = readJsonFile(CONFIG_FILE, null);
   if (!cfg || args.has('--setup')) cfg = await setup(cfg);
+  else if (args.has('--pair')) cfg = await setup(cfg, { pairOnly: true });
   checkConfig(cfg);
 
   let me;

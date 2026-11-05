@@ -5,17 +5,30 @@
  *
  * - Each helper uses its own key (Authorization: Bearer prs_agent_...). Only a hash is stored; keys can be revoked.
  * - A key can only add texts to its own private source; it cannot read, search or change anything else.
+ * - Pairing by code: the helper asks for a pairing and shows a short code; a signed-in person types it on the website,
+ *   and the helper then collects its key once. Nobody has to copy the long key by hand.
  */
 import crypto from 'node:crypto';
 import { HttpError, ok, readJson, validate } from '../http.mjs';
 import { requirePermission } from '../auth.mjs';
 import { nowIso } from '../db.mjs';
-import { sha256 } from '../security.mjs';
+import { RateLimiter, sha256 } from '../security.mjs';
 import { groupConversations } from '../ingest/messages.mjs';
 import { embedPending, upsertRecord } from '../ingest/pipeline.mjs';
 
 const TOKEN_PREFIX = 'prs_agent_';
 const MAX_BATCH = 2000;
+// Pairing codes: 8 characters with no look-alikes (no 0/O, 1/I/L), shown as ABCD-2345: about 850 billion possibilities.
+const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+const CODE_LENGTH = 8;
+const PAIRING_TTL_MS = 10 * 60_000;
+const PAIRING_POLL_SECONDS = 3;
+const MAX_OPEN_PAIRINGS = 500;
+
+/** Uppercase and drop spaces and dashes, so "abcd 2345" and "ABCD-2345" match. */
+export const normalizePairingCode = (code) => String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+const newPairingCode = () => Array.from({ length: CODE_LENGTH }, () => CODE_ALPHABET[crypto.randomInt(CODE_ALPHABET.length)]).join('');
+const showCode = (c) => `${c.slice(0, 4)}-${c.slice(4)}`;
 
 /** @param {import('../http.mjs').Router} router */
 export function registerAgentRoutes(router, s) {
@@ -44,12 +57,8 @@ export function registerAgentRoutes(router, s) {
       .map(r => ({ id: r.id, name: r.name, createdAt: r.created_at, lastUsedAt: r.last_used_at, revokedAt: r.revoked_at, sourceId: r.source_id, sourceName: r.source_name, records: r.records })));
   });
 
-  router.on('POST', '/api/agent-tokens', async ({ req, res, user, ipHash }) => {
-    requirePermission(user, 'sources.manage');
-    s.realGate(user);
-    const body = validate({ name: { type: 'string', required: true, min: 1, max: 60 }, acknowledged: { type: 'bool', required: true } }, await readJson(req));
-    if (body.acknowledged !== true) throw new HttpError(400, 'not_acknowledged', 'Confirm that these are your own texts and that you may index them.');
-    const name = body.name.trim();
+  /** Create a helper key and its private source. Returns the key itself, which is never stored. */
+  function createKey(user, name, ipHash, via) {
     const token = TOKEN_PREFIX + crypto.randomBytes(32).toString('base64url');
     const sourceId = crypto.randomUUID(), id = crypto.randomUUID();
     db.tx(() => {
@@ -58,8 +67,16 @@ export function registerAgentRoutes(router, s) {
         JSON.stringify(['texts.receive']), JSON.stringify({ provider: 'phonelink-agent', tokenId: id }), `PC sync helper: ${name}`, nowIso(), nowIso());
       db.run('INSERT INTO agent_tokens (id, tenant_id, user_id, source_id, name, token_hash, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', id, user.tenantId, user.id, sourceId, name, sha256(token), nowIso());
     });
-    audit.write({ tenantId: user.tenantId, userId: user.id, action: 'agent.key_created', targetType: 'source', targetId: sourceId, ipHash, details: { name } });
-    ok(res, { id, sourceId, token }, undefined, 201);
+    audit.write({ tenantId: user.tenantId, userId: user.id, action: 'agent.key_created', targetType: 'source', targetId: sourceId, ipHash, details: { name, via } });
+    return { id, sourceId, token };
+  }
+
+  router.on('POST', '/api/agent-tokens', async ({ req, res, user, ipHash }) => {
+    requirePermission(user, 'sources.manage');
+    s.realGate(user);
+    const body = validate({ name: { type: 'string', required: true, min: 1, max: 60 }, acknowledged: { type: 'bool', required: true } }, await readJson(req));
+    if (body.acknowledged !== true) throw new HttpError(400, 'not_acknowledged', 'Confirm that these are your own texts and that you may index them.');
+    ok(res, createKey(user, body.name.trim(), ipHash, 'key'), undefined, 201);
   });
 
   router.on('DELETE', '/api/agent-tokens/:id', ({ res, user, params, ipHash }) => {
@@ -100,5 +117,72 @@ export function registerAgentRoutes(router, s) {
       audit.write({ tenantId: source.tenant_id, userId: token.user_id, action: 'agent.texts_received', targetType: 'source', targetId: source.id, ipHash, details: { key: token.name, messages: messages.length, ...counts } });
     }
     ok(res, { received: messages.length, ...counts });
+  });
+
+  /* ---- pairing by code ---- */
+
+  // Wrong codes typed on the website, per person. Together with the 10-minute lifetime this makes guessing hopeless.
+  const wrongCodes = new RateLimiter(10, 15 * 60_000);
+  const sweepPairings = () => db.run("DELETE FROM agent_pairings WHERE expires_at < ?", new Date(Date.now() - 24 * 3600_000).toISOString());
+
+  // Called by the helper, which has no key yet.
+  router.on('POST', '/api/agent/pair/start', async ({ req, res }) => {
+    if (!s.config.realSources) throw new HttpError(403, 'real_sources_off', 'This server only holds Tier 0 data. It does not accept texts.');
+    const body = validate({ pcName: { type: 'string', max: 60, default: '' }, helperVersion: { type: 'string', max: 20, default: '' } }, await readJson(req));
+    sweepPairings();
+    if (db.get("SELECT COUNT(*) AS n FROM agent_pairings WHERE status = 'pending' AND expires_at > ?", nowIso()).n >= MAX_OPEN_PAIRINGS) {
+      throw new HttpError(429, 'too_many_pairings', 'Too many pairings are waiting. Try again in a few minutes.');
+    }
+    const deviceCode = crypto.randomBytes(32).toString('base64url');
+    const expiresAt = new Date(Date.now() + PAIRING_TTL_MS).toISOString();
+    const pcName = body.pcName.replace(/[\u0000-\u001f\u007f]/g, '').trim();
+    for (let attempt = 0; ; attempt++) {
+      const code = newPairingCode();
+      try {
+        db.run('INSERT INTO agent_pairings (id, user_code_hash, device_code_hash, pc_name, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)',
+          crypto.randomUUID(), sha256(code), sha256(deviceCode), pcName, nowIso(), expiresAt);
+        ok(res, { deviceCode, userCode: showCode(code), expiresIn: PAIRING_TTL_MS / 1000, interval: PAIRING_POLL_SECONDS, verifyUrl: s.config.publicUrl }, undefined, 201);
+        return;
+      } catch (err) { if (attempt >= 4) throw err; } // the same code is already in use: pick another
+    }
+  });
+
+  // Called by the helper every few seconds until someone types its code on the website. The key is handed out once.
+  router.on('POST', '/api/agent/pair/poll', async ({ req, res, ipHash }) => {
+    const body = validate({ deviceCode: { type: 'string', required: true, max: 100 } }, await readJson(req));
+    const p = db.get('SELECT * FROM agent_pairings WHERE device_code_hash = ?', sha256(body.deviceCode));
+    if (!p || p.status === 'claimed') throw new HttpError(404, 'pairing_not_found', 'This pairing is not known or was already used. Start pairing again.');
+    if (p.status === 'pending') {
+      if (p.expires_at < nowIso()) throw new HttpError(410, 'pairing_expired', 'The pairing code expired before it was entered. Start pairing again.');
+      ok(res, { status: 'pending' });
+      return;
+    }
+    const owner = db.get('SELECT id, tenant_id, name, disabled FROM users WHERE id = ?', p.user_id);
+    if (!owner || owner.disabled) throw new HttpError(403, 'pairing_refused', 'The account that approved this pairing can no longer add sources. Start pairing again.');
+    // Claim first, so two polls at once cannot both receive a key.
+    if (db.run("UPDATE agent_pairings SET status = 'claimed' WHERE id = ? AND status = 'approved'", p.id).changes !== 1) {
+      throw new HttpError(404, 'pairing_not_found', 'This pairing was already used. Start pairing again.');
+    }
+    const key = createKey({ id: owner.id, tenantId: owner.tenant_id, name: owner.name }, p.name, ipHash, 'pairing');
+    db.run('UPDATE agent_pairings SET token_id = ? WHERE id = ?', key.id, p.id);
+    ok(res, { status: 'approved', token: key.token, keyName: p.name, userName: owner.name });
+  });
+
+  // Called by a signed-in person who types the code the helper shows.
+  router.on('POST', '/api/agent-pairings', async ({ req, res, user, ipHash }) => {
+    requirePermission(user, 'sources.manage');
+    s.realGate(user);
+    const body = validate({ code: { type: 'string', required: true, max: 20 }, name: { type: 'string', max: 60, default: '' }, acknowledged: { type: 'bool', required: true } }, await readJson(req));
+    if (body.acknowledged !== true) throw new HttpError(400, 'not_acknowledged', 'Confirm that these are your own texts and that you may index them.');
+    const limit = wrongCodes.take(`u:${user.id}`);
+    if (!limit.allowed) throw new HttpError(429, 'rate_limited', 'Too many wrong codes. Wait a few minutes and try again.', { retryAfter: limit.retryAfter });
+    const code = normalizePairingCode(body.code);
+    const p = code.length === CODE_LENGTH ? db.get("SELECT * FROM agent_pairings WHERE user_code_hash = ? AND status = 'pending' AND expires_at > ?", sha256(code), nowIso()) : null;
+    if (!p) throw new HttpError(404, 'pairing_code_invalid', 'That code is not valid. Check it against the helper window; codes expire after 10 minutes.');
+    wrongCodes.reset(`u:${user.id}`);
+    const name = body.name.trim() || p.pc_name || 'My PC';
+    db.run("UPDATE agent_pairings SET status = 'approved', tenant_id = ?, user_id = ?, name = ?, approved_at = ? WHERE id = ? AND status = 'pending'", user.tenantId, user.id, name, nowIso(), p.id);
+    audit.write({ tenantId: user.tenantId, userId: user.id, action: 'agent.pairing_approved', targetType: 'agent_pairing', targetId: p.id, ipHash, details: { name, pcName: p.pc_name } });
+    ok(res, { paired: true, name, pcName: p.pc_name });
   });
 }

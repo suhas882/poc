@@ -130,6 +130,7 @@ export const AUDIT_ACTIONS = Object.freeze({
   'texts.sent': 'Sent city-business texts to the clerk',
   'agent.key_created': 'Created a PC sync helper key',
   'agent.key_revoked': 'Revoked a PC sync helper key',
+  'agent.pairing_approved': 'Paired a PC sync helper by code',
   'agent.texts_received': 'Received texts from a PC sync helper',
   'retention.applied': 'Applied retention policy',
   'access.denied': 'Blocked an action'

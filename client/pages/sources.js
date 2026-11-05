@@ -292,9 +292,13 @@ async function syncHelper() {
     const name = h('input', { value: 'My PC', maxlength: 60 });
     name.value = 'My PC';
     const ack = h('input', { type: 'checkbox' });
-    const create = h('button', { type: 'button', class: 'button primary' }, 'Create helper key');
+    const create = h('button', { type: 'button', class: 'button secondary' }, 'Create helper key');
     const out = h('div');
-    replace(body, h('p', null, 'This website runs on a server, so it cannot read files on your PC. The helper is a small program on your Windows PC that reads the texts Phone Link keeps there and sends new ones here every few minutes, over HTTPS. No exporting.'), h('ul', null, h('li', null, 'It only reads Phone Link’s copy of your texts. Nothing on your phone is changed.'), h('li', null, 'Its key can only add texts to your own private source. It cannot search or read anything here.'), h('li', null, 'Your PC must be on, with Phone Link running, for new texts to arrive. Revoke the key at any time to stop it.')), list, h('h3', null, 'Create a key'), field('Name for this PC', name), h('label', { class: 'inline-check consent-ack' }, ack, 'These are my own texts (or I am authorized to index them) and I want them sent to this site.'), out, h('div', { class: 'form-row' }, create));
+    const code = h('input', { maxlength: 12, placeholder: 'ABCD-2345', autocomplete: 'off', spellcheck: 'false', class: 'mono-input', 'aria-describedby': 'pair-code-help' });
+    const pcName = h('input', { maxlength: 60, placeholder: 'Uses the PC’s own name if left empty' });
+    const pairBtn = h('button', { type: 'button', class: 'button primary' }, 'Pair this PC');
+    const pairOut = h('div');
+    replace(body, h('p', null, 'This website runs on a server, so it cannot read files on your PC. The helper is a small program on your Windows PC that reads the texts Phone Link keeps there and sends new ones here every few minutes, over HTTPS. No exporting.'), h('ul', null, h('li', null, 'It only reads Phone Link’s copy of your texts. Nothing on your phone is changed.'), h('li', null, 'Its key can only add texts to your own private source. It cannot search or read anything here.'), h('li', null, 'Your PC must be on, with Phone Link running, for new texts to arrive. Revoke the key at any time to stop it.')), list, h('h3', null, 'Pair a PC with a code'), h('ol', { class: 'guide-steps' }, h('li', null, 'Make sure Phone Link is set up and your texts appear in its Messages tab.'), h('li', null, 'On that PC, open the project folder (the one with start.bat) and double-click ', h('b', null, 'phonelink-sync.bat'), '.'), h('li', null, 'When asked, enter this website’s address: ', h('code', null, location.origin), ', then press Enter to pair.'), h('li', null, 'The helper shows a pairing code. Type it below.')), field('Pairing code', code), h('p', { class: 'helper', id: 'pair-code-help' }, 'Eight letters and digits, shown in the helper window. Codes expire after 10 minutes.'), field('Name for this PC (optional)', pcName), h('label', { class: 'inline-check consent-ack' }, ack, 'These are my own texts (or I am authorized to index them) and I want them sent to this site.'), pairOut, h('div', { class: 'form-row' }, pairBtn), h('details', null, h('summary', null, 'Or create a key to paste into the helper'), h('p', { class: 'helper' }, 'Use this if the helper cannot show a code, for example when setting it up from a script. Tick the box above first.'), field('Name for this PC', name), out, h('div', { class: 'form-row' }, create)));
     const loadKeys = async () => {
         try {
             const keys = (await get('/api/agent-tokens')).data;
@@ -316,6 +320,33 @@ async function syncHelper() {
         }
     };
     loadKeys();
+    const doPair = async () => {
+        replace(pairOut);
+        if (!code.value.trim()) {
+            replace(pairOut, alertBox('Type the code the helper shows.'));
+            code.focus();
+            return;
+        }
+        if (!ack.checked) {
+            replace(pairOut, alertBox('Tick the box to confirm.'));
+            return;
+        }
+        try {
+            const res = await busy(pairBtn, 'Pairing…', () => post('/api/agent-pairings', { code: code.value, name: pcName.value.trim(), acknowledged: true }));
+            code.value = '';
+            replace(pairOut, alertBox(`Paired “${res.data.name}”. The helper on that PC picks up its key within a few seconds, sends your texts, and keeps checking for new ones.`, 'ok'), h('p', { class: 'helper' }, 'To start it automatically, press Win+R, type ', h('code', null, 'shell:startup'), ', and put a shortcut to phonelink-sync.bat in that folder.'));
+            // The key and its source are created when the helper collects them.
+            setTimeout(() => { loadKeys(); loadSources(); }, 5000);
+        }
+        catch (e) {
+            replace(pairOut, alertBox(e instanceof ApiError ? e.message : 'Could not pair.'));
+        }
+    };
+    pairBtn.addEventListener('click', doPair);
+    code.addEventListener('keydown', (e) => { if (e.key === 'Enter') {
+        e.preventDefault();
+        doPair();
+    } });
     create.addEventListener('click', async () => {
         replace(out);
         if (!ack.checked) {
