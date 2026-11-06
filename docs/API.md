@@ -78,6 +78,21 @@ Every change is written to the audit log (`consent.granted`, `consent.changed`, 
 - `POST /api/connectors/phonelink/connect` with `{ acknowledged: true }`: creates a private `messages` source with `config.provider = "phonelink"` and starts the first sync.
 - `POST /api/sources/:id/sync` re-reads Phone Link. Searches also refresh it automatically when the file has changed.
 
+## Android companion app
+
+Website (signed in, `sources.manage`; refused when real sources are off):
+- `POST /api/phone-pairings` `{ name?, acknowledged: true }` returns `{ id, code, expiresAt, server, pairUri }`. The code (like `ABCD-2345`) lasts 10 minutes and works once; only its hash is stored. `pairUri` is `prsphone://pair?s=<site>&c=<code>`. The website draws its QR code from the address the page was opened at.
+- `GET /api/phone-pairings/:id` returns `{ status: pending | claimed | expired | cancelled, device }`. `DELETE /api/phone-pairings/:id` cancels a pending code.
+- `GET /api/phone-devices`: each paired phone with `connection` (connected, not_seen_recently, waiting, revoked, removed), `sync` (syncing, up_to_date, needs_permission, error), `permission`, `pending`, `lastError`, `lastSyncAt`, `messages`, `records` and `device`.
+- `DELETE /api/phone-devices/:id[?deleteData=true]`: revoke the phone's key; with `deleteData`, also remove its source, records and stored texts.
+
+Phone (`Authorization: Bearer prs_phone_...`, except pairing):
+- `POST /api/phone/pair` `{ code, device: { model, androidVersion, appVersion } }` (no key; wrong codes limited to 10 per address per 15 minutes) returns `{ token, sourceId, sourceName, deviceName, userName }` and creates a private `messages` source with `config.provider = "android-app"`.
+- `GET /api/phone/status` returns `{ cursor: { lastId, lastDate }, messages, ... }`, so a reinstalled app can resume.
+- `POST /api/phone/messages` `{ messages: [{ id, date, address, body, sent }], status? }`, at most 500 per request. `id` is the phone's SMS `_id` and `date` is in epoch milliseconds. Texts already stored (same id, or same time, number, direction and body) are ignored. Each conversation-day that gained texts is rebuilt from everything stored for it. Returns `{ inserted, duplicates, skipped, added, updated, unchanged, cursor, messages }`.
+- `POST /api/phone/heartbeat` `{ status: { permission: granted | partial | denied, pending?, lastError? } }`.
+- `POST /api/phone/disconnect` `{ deleteData? }`: the phone revokes its own key, and optionally deletes what it sent.
+
 ## PC sync helper
 
 - `GET/POST /api/agent-tokens` and `DELETE /api/agent-tokens/:id` (signed in, `sources.manage`): list, create (`{ name, acknowledged: true }`, which returns the key once and creates a private source) and revoke helper keys.

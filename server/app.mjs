@@ -26,6 +26,7 @@ import { DatabaseConnector } from './connectors/database.mjs';
 import { PhoneLinkConnector, isPhoneLink } from './connectors/phonelink.mjs';
 import { startSync } from './routes/sources.mjs';
 import { registerAgentRoutes } from './routes/agent.mjs';
+import { registerPhoneRoutes } from './routes/phone.mjs';
 import { seedSyntheticSource } from './connectors/synthetic.mjs';
 import { registerSourceRoutes } from './routes/sources.mjs';
 import { registerSearchRoutes } from './routes/search.mjs';
@@ -109,6 +110,7 @@ export function createApp(config, deps = {}) {
   registerPhoneReviewRoutes(router, services);
   registerAdminRoutes(router, services);
   registerAgentRoutes(router, services);
+  registerPhoneRoutes(router, services);
   registerAccessRequestRoutes(router, services);
 
   /** @param {import('node:http').IncomingMessage} req @param {import('node:http').ServerResponse} res */

@@ -116,7 +116,7 @@ async function syncOnce(cfg, me, { full = false } = {}) {
   const tmp = path.join(os.tmpdir(), 'prs-phonelink-sync');
   const messages = withSnapshot(dbs[0].path, tmp, (db) => {
     const schema = detectSchema(db);
-    if (!schema.table) throw Object.assign(new Error(`Phone Link's message table was not recognized. Tables found: ${schema.tables.join(', ')}. Send this line to your developer.`), { fatal: true });
+    if (!schema.table) throw Object.assign(new Error(`Phone Link's messages could not be read (tables found: ${schema.tables.join(', ') || 'none'}). Recent Phone Link versions encrypt them. Use the Android companion app instead: website -> Connected Sources -> Android phone (companion app).`), { fatal: true });
     return readMessages(db, schema, { ownerLabel: me.userName || 'Me' });
   });
 

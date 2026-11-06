@@ -193,7 +193,13 @@ The app stores everything in one SQLite file (`DATA_DIR/records.db`). That folde
 - **AWS:** run it on EC2 or Lightsail with an EBS volume (or the instance's own disk), with `DATA_DIR` pointing at that volume. Put it behind HTTPS (a load balancer, CloudFront, or Caddy/nginx) and set `PUBLIC_URL`. Take EBS snapshots for backups. Avoid platforms whose disks reset (for example App Runner or Fargate without EFS).
 - Set `CREDENTIAL_ENCRYPTION_KEY` in the host's environment so stored credentials can still be decrypted after a move.
 
+## Android texts: companion app (recommended)
+
+Pair your Android phone once and its texts sync automatically, with no export and no Phone Link. See [ANDROID.md](ANDROID.md) for building the app, the Google Play SMS policy, and testing steps. Pair from the site's **https** address: a phone cannot reach `localhost`.
+
 ## Android texts on a hosted server: PC sync helper
+
+Note: recent Windows Phone Link versions encrypt their message database, so this helper may find no readable texts. Use the companion app above instead.
 
 A hosted server cannot read files on your PC, so Phone Link texts reach it through a small helper on the Windows PC:
 

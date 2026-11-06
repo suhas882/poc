@@ -224,7 +224,7 @@ export class PhoneLinkConnector {
     return withSnapshot(file.path, this.tmp, (db) => {
       const schema = detectSchema(db);
       const base = { found: true, file: { modifiedAt: file.modifiedAt, bytes: file.bytes }, tables: schema.tables };
-      if (!schema.table) return { ...base, recognized: false, reason: 'Phone Link’s file was found, but no message table was recognized. Tell your developer the table names shown here.' };
+      if (!schema.table) return { ...base, recognized: false, reason: 'Phone Link’s file was found, but its messages could not be read. Recent Phone Link versions encrypt this file. Use Android phone (companion app) in Connected Sources instead: it syncs texts straight from the phone.' };
       const c = schema.columns;
       const statsStmt = db.prepare(`SELECT COUNT(*) AS n${c.thread ? `, COUNT(DISTINCT ${q(c.thread)}) AS threads` : ''}${c.time ? `, MIN(${q(c.time)}) AS oldest, MAX(${q(c.time)}) AS newest` : ''} FROM ${q(schema.table)}`);
       statsStmt.setReadBigInts(true);

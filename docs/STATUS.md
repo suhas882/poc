@@ -67,6 +67,12 @@ The original README sets two gates: no model calls until Bellevue's approved mod
 - API: `GET /api/demo-state`, `PUT /api/demo-state/:key` with `{ value }`, and `DELETE /api/demo-state/:key`. Only the seven known demo keys are accepted, up to 1 MB each. This also works on `DEMO_ONLY` servers.
 - Real data was already stored in SQLite and is unchanged.
 
+## Android companion app (phone → site)
+
+- `android/` is a Kotlin app (Compose, WorkManager). It pairs with a one-time code or QR code, shows a consent screen, then asks for READ_SMS and RECEIVE_SMS. It sends SMS history, then new texts (SMS_RECEIVED broadcast, SMS store content trigger, and a 15-minute periodic job), over HTTPS with a revocable per-phone key held in the Android Keystore.
+- Server: `server/routes/phone.mjs` and migration `012_phone_companion.sql`. Texts are stored once (phone id and fingerprint), merged per conversation-day into a private `messages` source, and shown in Connected Sources with a status dashboard. Disconnect, revoke and delete-data are available on the website and in the app.
+- Covered by `tests/phone.test.mjs`. The Android app was not compiled in this environment (no Android SDK); build it in Android Studio. SMS only: RCS, MMS and other apps' messages are not available to third-party apps.
+
 ## PC sync helper (Phone Link → hosted server)
 
 - `agent/phonelink-sync.mjs` and `phonelink-sync.bat` read Phone Link on the Windows PC and send changed conversation-days to the hosted site over HTTPS, using a revocable per-PC key (only its hash is stored). The key can only add texts to its own private source.

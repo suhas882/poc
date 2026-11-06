@@ -409,3 +409,10 @@ code.scope { display: inline-block; margin: 0 4px 4px 0; }
 .integration-provider { margin: 16px 0; }
 .integration-provider h3 { display: flex; align-items: center; gap: 10px; }
 .alert-list { display: grid; gap: 8px; margin: 10px 0; }
+
+/* Android phone pairing */
+.phone-card { margin-bottom: 12px; }
+.card-actions.spread { justify-content: space-between; }
+.pair-box { display: flex; gap: 20px; flex-wrap: wrap; align-items: center; }
+.pair-qr { max-width: 100%; height: auto; image-rendering: pixelated; background: #fff; border-radius: 6px; }
+.pair-code { font-family: ui-monospace, Consolas, monospace; font-size: 28px; letter-spacing: 3px; }

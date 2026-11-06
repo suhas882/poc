@@ -58,6 +58,7 @@ export function connectorCatalog(s, user) {
     if (c.status === 'needs_configuration') return 'needs_setup';
     const own = mine.filter(r => r.type === c.type && (c.type !== 'database' || parseJson(r.config, {}).driver === c.driver) && (c.type !== 'messages' || !parseJson(r.config, {}).provider));
     if (c.type === 'phonelink') own.push(...mine.filter(isPhoneLink));
+    if (c.type === 'android') own.push(...mine.filter(r => parseJson(r.config, {}).provider === 'android-app'));
     if (own.some(r => r.status === 'pending_approval')) return 'pending_approval';
     // Only the owner can sign in again; for everyone else a shared source that needs attention still counts as connected.
     const broken = own.find(r => r.status === 'needs_attention' && r.owner_user_id === user.id);
@@ -65,7 +66,7 @@ export function connectorCatalog(s, user) {
     if (own.length) return 'connected';
     return SOURCE_TYPES[c.type]?.auth === 'oauth' ? 'authorization_required' : 'available';
   };
-  const real = fullCatalog(s).filter(c => c.type !== 'phonelink' || sw.phoneLink).map(c => ({ ...tag(c), lifecycle: lifecycleOf(c), approvalRequired: approval && c.type !== 'uploads' && c.type !== 'messages', ...(c.type === 'phonelink' ? { experimental: true } : {}) }));
+  const real = fullCatalog(s).filter(c => c.type !== 'phonelink' || sw.phoneLink).map(c => ({ ...tag(c), lifecycle: lifecycleOf(c), approvalRequired: approval && c.type !== 'uploads' && c.type !== 'messages' && c.type !== 'android', ...(c.type === 'phonelink' ? { experimental: true } : {}) }));
   // A placeholder whose real connector exists on this server would only repeat it; it stays NOT searched in reports until connected.
   const ready = new Set(real.filter(c => c.status !== 'planned').map(c => c.type));
   const placeholders = stubs.filter(c => !ready.has(STUB_COVERED_BY[c.key]));
@@ -79,8 +80,9 @@ function fullCatalog(s) {
   return [
     { type: 'gmail', name: 'Gmail', description: 'Read-only access to one mailbox through Google sign-in. Attachments in supported formats are indexed too.', permissions: ['Read email messages and attachments (gmail.readonly)'], ...st(s.gmail.configured && s.vault, !s.gmail.configured ? 'An administrator needs to add Google OAuth credentials (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET).' : 'Credential encryption key is missing.') },
     { type: 'uploads', name: 'Document uploads', description: 'Upload PDF, Word, Excel, CSV, JSON, text files and images (OCR). Each file is checked for type and size, scanned for malware when a scanner is configured, and de-duplicated. On a phone, use the file picker to choose exported files.', permissions: ['Only the files you choose'], status: 'available' },
+    { type: 'android', category: 'messages', name: 'Android phone (companion app)', description: 'Pair your Android phone once with a code or QR code. The companion app sends your text message history, then new texts as they arrive, over HTTPS. No exports, no uploads, and nothing read from Windows Phone Link.', permissions: ['Read SMS on your phone, after you allow it there (READ_SMS, RECEIVE_SMS)', 'Texts go only to your own private source on this site', 'Nothing is sent from, changed on, or deleted from your phone'], status: 'available', note: 'Needs the companion app on the phone. SMS only: RCS chat messages, MMS pictures and other messaging apps are not included.' },
     { type: 'phonelink', name: 'Android texts (Phone Link)', description: 'Reads the texts your Android phone already syncs to Windows Phone Link on this PC, with no export. New texts are picked up automatically.', permissions: ['Read Phone Link’s copy of your texts, read-only', 'Nothing is sent from or changed on your phone'], status: 'available', local: s.phonelink.available, note: s.phonelink.available ? 'On a hosted server (Render, AWS), use the PC sync helper instead.' : 'This server is not on your PC, so it uses the PC sync helper: a small program on your Windows PC that sends new texts here.' },
-    { type: 'messages', name: 'Message imports', description: 'Import message exports you create yourself: Android SMS Backup & Restore XML, WhatsApp “Export chat” text, or CSV.', permissions: ['Only the export files you choose'], status: 'available', note: 'For Android texts without exporting, use Android texts (Phone Link) above. WhatsApp and iPhone messages still need an export.' },
+    { type: 'messages', name: 'Message imports', description: 'Import message exports you create yourself: Android SMS Backup & Restore XML, WhatsApp “Export chat” text, or CSV.', permissions: ['Only the export files you choose'], status: 'available', note: 'For Android texts without exporting, use Android phone (companion app) above. WhatsApp and iPhone messages still need an export.' },
     { type: 'database', driver: 'postgres', name: 'PostgreSQL', description: 'Read-only, allowlisted tables and columns.', permissions: ['SELECT on allowlisted tables'], ...st(hasModule('pg'), 'The PostgreSQL driver is not installed (npm install pg).') },
     { type: 'database', driver: 'mysql', name: 'MySQL', description: 'Read-only, allowlisted tables and columns.', permissions: ['SELECT on allowlisted tables'], ...st(hasModule('mysql2'), 'The MySQL driver is not installed (npm install mysql2).') },
     { type: 'database', driver: 'sqlite', name: 'SQLite file', description: 'Read-only access to a SQLite file placed in the server’s connector folder.', permissions: ['Read the chosen file'], status: 'available' },
@@ -109,6 +111,7 @@ function sourceView(row, user, running, registry) {
   const repositories = row.type === 'gmail' ? [{ name: cfg.query ? `Messages matching “${cfg.query}”` : 'All mail except spam and trash', kind: 'gmail_query' }]
     : isPhoneLink(row) ? [{ name: 'Texts synced by Phone Link on this PC', kind: 'phonelink' }]
     : cfg.provider === 'phonelink-agent' ? [{ name: 'Texts sent by the PC sync helper', kind: 'phonelink-agent' }]
+    : cfg.provider === 'android-app' ? [{ name: 'SMS sent by the Android companion app', kind: 'android-app' }]
     : row.type === 'outlook' ? [{ name: `Mail received in the last ${Math.round((Number(cfg.days) || 730) / 30)} months, except Deleted Items and Junk`, kind: 'outlook_window' }]
     : row.type === 'onedrive' ? [{ name: 'All files in this OneDrive', kind: 'onedrive_root' }]
     : row.type === 'gdrive' ? [{ name: 'My Drive and files shared with you, except the trash', kind: 'gdrive_all' }]
@@ -208,7 +211,7 @@ export function afterConnect(s, row, user, trigger, ipHash) {
 }
 
 /** Remove a source completely: revoke at the provider, delete credentials, records, files and the source row. */
-async function removeSource(s, row, user, ipHash) {
+export async function removeSource(s, row, user, ipHash) {
   const handler = s.connectors.handlerFor(row);
   const revoked = handler ? (await handler.disconnect(row)).revoked : null;
   const removed = deleteSourceRecords(s.db, row.id);
@@ -503,7 +506,7 @@ export function registerSourceRoutes(router, s) {
     if (!filename || filename.startsWith('.')) throw new HttpError(400, 'missing_filename', 'Send the file name in the X-File-Name header.');
     const sourceId = url.searchParams.get('sourceId');
     const source = isPublic ? publicCollection(user) : sourceId ? loadManageable(s, user, sourceId) : defaultCollection(user, kind);
-    if (isPhoneLink(source) || parseJson(source.config, {}).provider === 'phonelink-agent') throw new HttpError(400, 'wrong_source', 'Phone Link texts update by themselves. Import message exports into a message import source instead.');
+    if (isPhoneLink(source) || ['phonelink-agent', 'android-app'].includes(parseJson(source.config, {}).provider)) throw new HttpError(400, 'wrong_source', 'Phone texts update by themselves. Import message exports into a message import source instead.');
     if (source.type !== kind) throw new HttpError(400, 'wrong_source', kind === 'messages' ? 'Message exports go into a message import source.' : 'Documents go into an upload source.');
     const buf = await readBody(req, config.uploads.maxBytes);
     if (!buf.length) throw new HttpError(400, 'empty_file', 'The file is empty.');

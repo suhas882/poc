@@ -40,7 +40,7 @@ export function registerAgentRoutes(router, s) {
     const auth = String(req.headers.authorization || '');
     const m = /^Bearer\s+(prs_agent_[A-Za-z0-9_-]{20,})$/.exec(auth);
     if (!m) throw new HttpError(401, 'agent_key_missing', 'Send the helper key as "Authorization: Bearer prs_agent_...".');
-    const row = db.get(`SELECT t.*, u.name AS user_name, u.disabled, u.role FROM agent_tokens t JOIN users u ON u.id = t.user_id WHERE t.token_hash = ?`, sha256(m[1]));
+    const row = db.get(`SELECT t.*, u.name AS user_name, u.disabled, u.role FROM agent_tokens t JOIN users u ON u.id = t.user_id WHERE t.token_hash = ? AND t.kind = 'pc'`, sha256(m[1]));
     if (!row || row.revoked_at || row.disabled) throw new HttpError(401, 'agent_key_invalid', 'This helper key is not valid. It may have been revoked; create a new one in Connected Sources.');
     const source = db.get("SELECT * FROM sources WHERE id = ? AND status NOT IN ('disconnected', 'pending_approval')", row.source_id);
     if (!source) throw new HttpError(401, 'agent_key_invalid', 'The source for this key was removed. Create a new key in Connected Sources.');
@@ -53,7 +53,7 @@ export function registerAgentRoutes(router, s) {
     requirePermission(user, 'sources.manage');
     ok(res, db.all(`SELECT t.id, t.name, t.created_at, t.last_used_at, t.revoked_at, t.source_id, s.name AS source_name,
         (SELECT COUNT(*) FROM records r WHERE r.source_id = t.source_id) AS records
-      FROM agent_tokens t LEFT JOIN sources s ON s.id = t.source_id WHERE t.user_id = ? ORDER BY t.created_at DESC`, user.id)
+      FROM agent_tokens t LEFT JOIN sources s ON s.id = t.source_id WHERE t.user_id = ? AND t.kind = 'pc' ORDER BY t.created_at DESC`, user.id)
       .map(r => ({ id: r.id, name: r.name, createdAt: r.created_at, lastUsedAt: r.last_used_at, revokedAt: r.revoked_at, sourceId: r.source_id, sourceName: r.source_name, records: r.records })));
   });
 
@@ -81,7 +81,7 @@ export function registerAgentRoutes(router, s) {
 
   router.on('DELETE', '/api/agent-tokens/:id', ({ res, user, params, ipHash }) => {
     requirePermission(user, 'sources.manage');
-    const row = db.get('SELECT * FROM agent_tokens WHERE id = ? AND tenant_id = ?', params.id, user.tenantId);
+    const row = db.get("SELECT * FROM agent_tokens WHERE id = ? AND tenant_id = ? AND kind = 'pc'", params.id, user.tenantId);
     if (!row || (row.user_id !== user.id && user.role !== 'admin')) throw new HttpError(404, 'not_found', 'That helper key does not exist.');
     if (!row.revoked_at) db.run('UPDATE agent_tokens SET revoked_at = ? WHERE id = ?', nowIso(), row.id);
     audit.write({ tenantId: user.tenantId, userId: user.id, action: 'agent.key_revoked', targetType: 'source', targetId: row.source_id, ipHash, details: { name: row.name } });

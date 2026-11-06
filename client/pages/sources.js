@@ -1,5 +1,6 @@
 import { api, ApiError, can, del, get, patch, post, uploadFile } from '../api.js';
 import { initShell } from '../shell.js';
+import { qrMatrix, qrSvgDataUrl } from '../qr.js';
 import { $, alertBox, busy, empty, field, fmtBytes, fmtDate, fmtNum, h, openDialog, replace, ROLE_LABEL, SOURCE_LABEL, toast } from '../ui.js';
 const ROLES = ['admin', 'records_officer', 'reviewer', 'auditor'];
 const STATUS_LABEL = { connected: 'Connected', syncing: 'Synchronizing', needs_attention: 'Needs attention', disconnected: 'Disconnected' };
@@ -11,7 +12,7 @@ const LIFECYCLE = {
     unsupported: ['Not available yet', 'planned'], not_connected: ['Not connected', 'not_connected']
 };
 const CATEGORY = { email: 'Email', files: 'Files and documents', messages: 'Text messages', databases: 'Databases', imports: 'Uploads and imports', demo: 'Demo data', planned: 'Not connected in this proof of concept' };
-const ICON = { public: 'P', stub: '\u25CC', phonelink: '✆', gmail: '✉', uploads: '⇪', messages: '✆', database: '⛁', synthetic: '◇', gdrive: '△', onedrive: '☁', sharepoint: '▦', outlook: '✉' };
+const ICON = { public: 'P', stub: '\u25CC', phonelink: '✆', android: '📱', gmail: '✉', uploads: '⇪', messages: '✆', database: '⛁', synthetic: '◇', gdrive: '△', onedrive: '☁', sharepoint: '▦', outlook: '✉' };
 let status;
 let sys = null;
 let pollTimer = 0;
@@ -151,7 +152,7 @@ function summaryTable(sources) {
                     } } }, 'Sync now'));
         if (s.canManage)
             actions.append(h('button', { type: 'button', class: 'button small danger', on: { click: () => disconnect(s) } }, isOAuth(s.type) ? 'Disconnect' : 'Remove'));
-        return h('tr', null, h('td', null, SOURCE_LABEL[s.type] || s.type), h('th', { scope: 'row' }, s.name, s.accountLabel ? h('div', { class: 'helper' }, s.accountLabel) : null), h('td', null, life ? h('span', { class: `status-pill st-${life[1]}` }, life[0]) : s.status), h('td', null, s.scopes.length ? s.scopes.map(x => h('code', { class: 'scope' }, x.split('/').pop())) : '–'), h('td', null, s.lastSuccessAt ? fmtDate(s.lastSuccessAt, true) : s.syncs ? 'Never' : '–'), h('td', null, fmtNum(s.recordCount)), h('td', null, s.lastError ? h('span', { class: 'helper' }, s.lastError.slice(0, 160)) : '–'), h('td', null, actions));
+        return h('tr', null, h('td', null, s.provider === 'android-app' ? 'Android phone' : SOURCE_LABEL[s.type] || s.type), h('th', { scope: 'row' }, s.name, s.accountLabel ? h('div', { class: 'helper' }, s.accountLabel) : null), h('td', null, life ? h('span', { class: `status-pill st-${life[1]}` }, life[0]) : s.status), h('td', null, s.scopes.length ? s.scopes.map(x => h('code', { class: 'scope' }, x.split('/').pop())) : '–'), h('td', null, s.lastSuccessAt ? fmtDate(s.lastSuccessAt, true) : s.syncs ? 'Never' : '–'), h('td', null, fmtNum(s.recordCount)), h('td', null, s.lastError ? h('span', { class: 'helper' }, s.lastError.slice(0, 160)) : '–'), h('td', null, actions));
     })));
 }
 function sourceCard(s) {
@@ -166,7 +167,7 @@ function sourceCard(s) {
         : 'Waiting for a Supervisor to approve this source. It is not synchronized or searched until then.') : null, s.canApprove ? h('div', { class: 'card-actions' }, h('button', { type: 'button', class: 'button primary', on: { click: (e) => decide(e, s, 'approve') } }, 'Approve'), h('button', { type: 'button', class: 'button danger', on: { click: (e) => decide(e, s, 'reject') } }, 'Reject and remove')) : null);
     if (s.canManage) {
         const actions = h('div', { class: 'card-actions' });
-        const phone = s.provider === 'phonelink', helper = s.provider === 'phonelink-agent';
+        const phone = s.provider === 'phonelink' || s.provider === 'android-app', helper = s.provider === 'phonelink-agent';
         if (s.syncs && !pending) {
             actions.append(h('button', { type: 'button', class: 'button primary', disabled: s.status === 'syncing', on: { click: async (e) => {
                         try {
@@ -190,6 +191,8 @@ function sourceCard(s) {
             actions.append(h('button', { type: 'button', class: 'button secondary', on: { click: () => showRecords(s) } }, 'View conversations'));
         if (helper)
             actions.append(h('button', { type: 'button', class: 'button secondary', on: { click: () => syncHelper() } }, 'Helper keys'));
+        if (s.provider === 'android-app')
+            actions.append(h('button', { type: 'button', class: 'button secondary', on: { click: () => phoneDialog() } }, 'Phone status'));
         if ((s.type === 'uploads' || s.type === 'messages') && !phone && !helper) {
             actions.append(fileButton(s.type === 'uploads' ? 'Upload more files' : 'Import more messages', s.type, s.id));
             actions.append(h('button', { type: 'button', class: 'button secondary', on: { click: () => showRecords(s) } }, 'Manage files'));
@@ -223,6 +226,8 @@ async function loadConnectors() {
             action = h('p', { class: 'helper' }, c.reason || 'Needs configuration.');
         else if (c.type === 'phonelink' && manage)
             action = h('div', { class: 'card-actions' }, c.local ? h('button', { type: 'button', class: 'button primary', on: { click: () => phoneLink() } }, 'Check this PC') : null, h('button', { type: 'button', class: c.local ? 'button secondary' : 'button primary', on: { click: () => syncHelper() } }, 'PC sync helper'));
+        else if (c.type === 'android' && manage)
+            action = h('button', { type: 'button', class: 'button primary', on: { click: () => phoneDialog() } }, c.lifecycle === 'connected' ? 'Phones' : 'Connect phone');
         else if (c.type === 'gmail' && manage)
             action = h('button', { type: 'button', class: 'button primary', on: { click: () => startGmail() } }, 'Connect Gmail');
         else if (c.type === 'gdrive' && manage)
@@ -284,6 +289,124 @@ async function phoneLink() {
             replace(out, alertBox(e instanceof ApiError ? e.message : 'Could not connect.'));
         }
     });
+}
+const CONNECTION_PILL = {
+    connected: ['Connected', 'ok'], not_seen_recently: ['Not seen for a day', 'warn'], waiting: ['Waiting for the phone', 'warn'], revoked: ['Disconnected', 'gray'], removed: ['Removed', 'gray']
+};
+const SYNC_PILL = {
+    syncing: ['Syncing', 'warn'], up_to_date: ['Up to date', 'ok'], needs_permission: ['Needs SMS permission', 'bad'], error: ['Sync error', 'bad']
+};
+const PERMISSION_LABEL = { granted: 'Allowed', denied: 'Not allowed', partial: 'Partly allowed', unknown: 'Not reported yet' };
+function phoneDialog() {
+    const body = h('div', { class: 'consent' });
+    let timer = 0, pairing = null;
+    const stop = () => { window.clearInterval(timer); timer = 0; };
+    openDialog('Android phone (companion app)', body, { wide: true, onClose: () => { stop(); if (pairing)
+            del(`/api/phone-pairings/${pairing.id}`).catch(() => undefined); loadSources(); loadConnectors(); } });
+    const list = h('div', null, h('p', { class: 'helper' }, 'Loading…'));
+    const pairArea = h('div');
+    const name = h('input', { maxlength: 60, placeholder: 'Uses the phone model if left empty' });
+    const ack = h('input', { type: 'checkbox' });
+    const start = h('button', { type: 'button', class: 'button primary' }, 'Show pairing code');
+    const loadDevices = async () => {
+        let devices;
+        try {
+            devices = (await get('/api/phone-devices')).data;
+        }
+        catch {
+            replace(list, alertBox('Could not load your phones.'));
+            return;
+        }
+        if (!devices.length) {
+            replace(list, h('p', { class: 'helper' }, 'No phone is paired yet.'));
+            return;
+        }
+        replace(list, h('h3', null, 'Your phones'), ...devices.map(deviceCard));
+    };
+    const pill = (map, key) => key && map[key] ? h('span', { class: `pill ${map[key][1]}` }, map[key][0]) : null;
+    const deviceCard = (d) => {
+        const live = d.connection !== 'revoked' && d.connection !== 'removed';
+        const remove = async (e, deleteData) => {
+            const msg = deleteData
+                ? `Disconnect ${d.name} and delete all ${fmtNum(d.messages)} synced texts from this site? Texts on the phone are not touched. This cannot be undone.`
+                : `Disconnect ${d.name}? The phone stops sending texts. Texts already here stay until you delete them.`;
+            if (!confirm(msg))
+                return;
+            try {
+                const r = await busy(e.currentTarget, 'Working…', () => del(`/api/phone-devices/${d.id}${deleteData ? '?deleteData=true' : ''}`));
+                toast(r.data.dataDeleted ? `Disconnected and deleted ${fmtNum(r.data.recordsDeleted)} records` : 'Phone disconnected');
+                loadDevices();
+                loadSources();
+            }
+            catch (err) {
+                toast(err instanceof ApiError ? err.message : 'Could not disconnect.', 'error');
+            }
+        };
+        const model = [d.device.model, d.device.androidVersion ? `Android ${d.device.androidVersion}` : null, d.device.appVersion ? `app ${d.device.appVersion}` : null].filter(Boolean).join(' · ');
+        return h('div', { class: 'card phone-card' }, h('div', { class: 'card-actions spread' }, h('b', null, d.name), h('span', null, pill(CONNECTION_PILL, d.connection), ' ', pill(SYNC_PILL, d.sync))), model ? h('p', { class: 'helper' }, model) : null, h('dl', { class: 'meta-list' }, h('dt', null, 'SMS permission'), h('dd', null, PERMISSION_LABEL[d.permission] ?? d.permission), h('dt', null, 'Texts synced'), h('dd', null, `${fmtNum(d.messages)} (${fmtNum(d.records)} conversation-days)`), h('dt', null, 'Last sync'), h('dd', null, d.lastSyncAt ? fmtDate(d.lastSyncAt, true) : 'Not yet'), h('dt', null, 'Last contact'), h('dd', null, d.lastSeenAt ? fmtDate(d.lastSeenAt, true) : 'Never'), d.pending ? [h('dt', null, 'Still to send'), h('dd', null, fmtNum(d.pending))] : null, d.lastError ? [h('dt', null, 'Last error'), h('dd', null, `${d.lastError}${d.lastErrorAt ? ` (${fmtDate(d.lastErrorAt, true)})` : ''}`)] : null), h('div', { class: 'card-actions' }, live ? h('button', { type: 'button', class: 'button secondary small', on: { click: (e) => remove(e, false) } }, 'Disconnect') : null, d.sourceId ? h('button', { type: 'button', class: 'button danger small', on: { click: (e) => remove(e, true) } }, live ? 'Disconnect and delete synced texts' : 'Delete synced texts') : null));
+    };
+    replace(body, h('p', null, 'The companion app runs on your Android phone. After you pair it once and allow SMS access on the phone, it sends your text history here, then each new text as it arrives. No exports, no uploads, and nothing is read from Windows Phone Link.'), h('ul', null, h('li', null, 'It only reads texts. Nothing is sent from, changed on, or deleted from your phone.'), h('li', null, 'Texts go to your own private source here. Its key cannot search or read anything on this site.'), h('li', null, 'Included: SMS in the phone’s message store. Not included: RCS chat messages, MMS pictures, WhatsApp and other apps.')), list, h('h3', null, 'Pair a phone'), h('ol', { class: 'guide-steps' }, h('li', null, 'Install the companion app on your phone (see docs/ANDROID.md for how to build or get the APK).'), h('li', null, 'Click Show pairing code. Scan the QR code with the app, or type the site address and code.'), h('li', null, 'On the phone, read the consent screen and allow SMS access.')), field('Name for this phone (optional)', name), h('label', { class: 'inline-check consent-ack' }, ack, 'These are my own texts (or I am authorized to index them) and I want them sent to this site.'), pairArea, h('div', { class: 'form-row' }, start));
+    start.addEventListener('click', async () => {
+        replace(pairArea);
+        if (!ack.checked) {
+            replace(pairArea, alertBox('Tick the box to confirm.'));
+            return;
+        }
+        try {
+            const r = await busy(start, 'Creating…', () => post('/api/phone-pairings', { name: name.value.trim(), acknowledged: true }));
+            pairing = r.data;
+            // Use the address this page was opened at: it is the one that works from outside (PUBLIC_URL may be a local default).
+            const site = location.origin;
+            const local = /^(localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)$/.test(location.hostname);
+            const uri = `prsphone://pair?s=${encodeURIComponent(site)}&c=${r.data.code.replace('-', '')}`;
+            // Whole pixels per module keep the code sharp, so phone cameras read it reliably.
+            const modules = qrMatrix(uri).length + 8;
+            const px = modules * Math.max(4, Math.floor(232 / modules));
+            const left = h('span');
+            const state = h('p', { class: 'helper', role: 'status' }, 'Waiting for the phone to enter this code…');
+            replace(pairArea, local || location.protocol !== 'https:' ? alertBox(local
+                ? `This page is open at ${site}, which a phone cannot reach. Pair from your hosted https site (for example your Render or Azure address); texts only travel over HTTPS.`
+                : `This site is served over plain http. The phone app only sends texts over https, so pairing will fail. Open the site at its https:// address.`, 'warn') : null, h('div', { class: 'card pair-box' }, h('img', { src: qrSvgDataUrl(uri), alt: `QR code for pairing. Code ${r.data.code}`, width: px, height: px, class: 'pair-qr' }), h('div', null, h('p', null, 'Site address: ', h('code', null, site)), h('p', null, 'Pairing code: ', h('b', { class: 'pair-code' }, r.data.code)), h('p', { class: 'helper' }, 'Expires in ', left, '. It works once. Scan it with the companion app’s “Scan QR code” button.'), state)));
+            start.hidden = true;
+            const tick = async () => {
+                const ms = Date.parse(r.data.expiresAt) - Date.now();
+                left.textContent = ms > 0 ? `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}` : '0:00';
+                try {
+                    const p = (await get(`/api/phone-pairings/${r.data.id}`)).data;
+                    if (p.status === 'claimed') {
+                        stop();
+                        pairing = null;
+                        replace(pairArea, alertBox(`The phone “${p.device?.name ?? 'phone'}” entered this code and is now paired. Allow SMS access on the phone; its texts then appear here automatically.`, 'ok'));
+                        start.hidden = false;
+                        start.textContent = 'Pair another phone';
+                        loadDevices();
+                        loadSources();
+                        loadConnectors();
+                    }
+                    else if (p.status !== 'pending') {
+                        stop();
+                        pairing = null;
+                        replace(pairArea, alertBox('The code expired. Show a new one to try again.', 'warn'));
+                        start.hidden = false;
+                    }
+                }
+                catch { /* keep trying */ }
+            };
+            stop();
+            timer = window.setInterval(tick, 2000);
+            tick();
+        }
+        catch (e) {
+            replace(pairArea, alertBox(e instanceof ApiError ? e.message : 'Could not create a pairing code.'));
+        }
+    });
+    loadDevices();
+    // Keep the status fresh while the dialog is open.
+    const refresh = window.setInterval(() => { if (!document.body.contains(body)) {
+        window.clearInterval(refresh);
+        return;
+    } if (!timer)
+        loadDevices(); }, 15000);
 }
 async function syncHelper() {
     const body = h('div', { class: 'consent' });
@@ -380,7 +503,7 @@ function setupSteps() {
 /* ---------------- message export guide ---------------- */
 function exportGuide() {
     const step = (title, items) => h('section', { class: 'guide-step' }, h('h3', null, title), h('ol', null, items.map(i => h('li', null, i))));
-    openDialog('How to export messages as files', h('div', { class: 'guide' }, h('p', null, 'Phones only let the owner export their messages. Ask the person who holds the phone to make the export, then upload the file here with “Choose export files”.'), step('Android text messages (SMS)', [
+    openDialog('How to export messages as files', h('div', { class: 'guide' }, h('p', null, 'Phones only let the owner export their messages. Ask the person who holds the phone to make the export, then upload the file here with “Choose export files”.'), h('p', null, h('b', null, 'Android SMS without exporting: '), 'use Android phone (companion app) under Connected Sources. It syncs texts automatically once paired.'), step('Android text messages (SMS)', [
         'Install “SMS Backup & Restore” by SyncTech from the Google Play Store.',
         'Open it, tap “Set up a backup”, turn on Messages only, and choose where to save (phone storage, Google Drive or email).',
         'Tap “Back up now”. It creates a file named like sms-20250120.xml.',

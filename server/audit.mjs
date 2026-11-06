@@ -131,6 +131,10 @@ export const AUDIT_ACTIONS = Object.freeze({
   'agent.key_created': 'Created a PC sync helper key',
   'agent.key_revoked': 'Revoked a PC sync helper key',
   'agent.pairing_approved': 'Paired a PC sync helper by code',
+  'phone.pairing_started': 'Started pairing an Android phone',
+  'phone.paired': 'Paired an Android phone',
+  'phone.texts_received': 'Received texts from an Android phone',
+  'phone.disconnected': 'Disconnected an Android phone',
   'agent.texts_received': 'Received texts from a PC sync helper',
   'retention.applied': 'Applied retention policy',
   'access.denied': 'Blocked an action'
