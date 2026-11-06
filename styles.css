@@ -416,3 +416,16 @@ code.scope { display: inline-block; margin: 0 4px 4px 0; }
 .pair-box { display: flex; gap: 20px; flex-wrap: wrap; align-items: center; }
 .pair-qr { max-width: 100%; height: auto; image-rendering: pixelated; background: #fff; border-radius: 6px; }
 .pair-code { font-family: ui-monospace, Consolas, monospace; font-size: 28px; letter-spacing: 3px; }
+
+/* Connect via QR */
+.qr-connect-body { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start; margin: 8px 0 12px; }
+.qr-connect-body > div { flex: 1 1 240px; min-width: 0; }
+.qr-connect-body ol { margin: 8px 0; }
+.qr-match { display: flex; align-items: baseline; gap: 10px; margin: 0 0 6px; }
+.qr-match b { font-size: 34px; letter-spacing: 4px; color: var(--blue-dark); font-family: ui-monospace, Consolas, monospace; }
+.qr-status { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 28px; }
+.qr-status .alert { flex: 1 1 100%; }
+.qr-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px; margin: 0; background: var(--bg, #f4f6fb); }
+.qr-phone-card { max-width: 460px; width: 100%; }
+.qr-phone-card form { margin-top: 10px; }
+.qr-phone-card form .button { width: 100%; justify-content: center; }

@@ -27,6 +27,7 @@ import { PhoneLinkConnector, isPhoneLink } from './connectors/phonelink.mjs';
 import { startSync } from './routes/sources.mjs';
 import { registerAgentRoutes } from './routes/agent.mjs';
 import { registerPhoneRoutes } from './routes/phone.mjs';
+import { registerQrConnectRoutes } from './routes/qr-connect.mjs';
 import { seedSyntheticSource } from './connectors/synthetic.mjs';
 import { registerSourceRoutes } from './routes/sources.mjs';
 import { registerSearchRoutes } from './routes/search.mjs';
@@ -111,6 +112,7 @@ export function createApp(config, deps = {}) {
   registerAdminRoutes(router, services);
   registerAgentRoutes(router, services);
   registerPhoneRoutes(router, services);
+  registerQrConnectRoutes(router, services);
   registerAccessRequestRoutes(router, services);
 
   /** @param {import('node:http').IncomingMessage} req @param {import('node:http').ServerResponse} res */
@@ -120,14 +122,15 @@ export function createApp(config, deps = {}) {
     const ip = (config.trustProxy ? forwardedIp(req.headers['x-forwarded-for']) : '') || req.socket.remoteAddress || '';
     try {
       if (url.pathname === '/api/health' && req.method === 'GET') return sendJson(res, 200, { ok: true, data: { status: 'ok', demoOnly: !config.realSources, realSources: config.realSources } });
-      if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/oauth/')) {
+      // /qr/ is the page a scanned "Connect via QR" code opens on a phone (no session; see routes/qr-connect.mjs).
+      if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/oauth/') || url.pathname.startsWith('/qr/')) {
         const user = sessions.fromRequest(req);
         const rate = services.limits.api.take(user ? `u:${user.id}` : `ip:${ip}`);
         if (!rate.allowed) throw new HttpError(429, 'rate_limited', 'Too many requests. Wait a moment and try again.', { retryAfter: rate.retryAfter });
         const match = router.match(req.method || 'GET', url.pathname);
         if (!match) throw new HttpError(404, 'not_found', 'There is no API endpoint at this address.');
         if ('methodNotAllowed' in match) throw new HttpError(405, 'method_not_allowed', 'This endpoint does not accept that method.');
-        if (user && !url.pathname.startsWith('/oauth/')) checkCsrf(req, user, config.publicUrl);
+        if (user && !url.pathname.startsWith('/oauth/') && !url.pathname.startsWith('/qr/')) checkCsrf(req, user, config.publicUrl);
         const ctx = { req, res, url, params: match.params, user, ip, ipHash: hashIp(ip, config.ipHashSalt || 'prs'), services };
         await match.handler(ctx);
         return;

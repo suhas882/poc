@@ -108,11 +108,12 @@ export async function integrationStatus(s, user, { live = false } = {}) {
   const graph = {
     outlook: evidence(db, user.tenantId, ['outlook'], 'microsoft_access_denied'),
     onedrive: evidence(db, user.tenantId, ['onedrive'], 'microsoft_access_denied'),
-    sharepoint: evidence(db, user.tenantId, ['sharepoint'], 'microsoft_access_denied')
+    sharepoint: evidence(db, user.tenantId, ['sharepoint'], 'microsoft_access_denied'),
+    teams: evidence(db, user.tenantId, ['teams'], 'microsoft_access_denied')
   };
   const microsoftReq = [
     'App registration with Supported account types "Accounts in any organizational directory and personal Microsoft accounts" (tenant "common").',
-    'Delegated Microsoft Graph permissions: User.Read, Mail.Read, Files.Read, Sites.Read.All, offline_access. Microsoft does not let this server read them back; each is confirmed the first time someone consents.',
+    'Delegated Microsoft Graph permissions: User.Read, Mail.Read, Files.Read, Sites.Read.All, Chat.Read, offline_access. Microsoft does not let this server read them back; each is confirmed the first time someone consents.',
     'Personal accounts (Outlook.com, Hotmail): Outlook Mail and OneDrive. SharePoint needs a Microsoft 365 work or school account.',
     'Some organizations turn off user consent: their administrator must grant consent for the app once (Enterprise applications, Permissions).',
     `Web redirect URI to register exactly: ${m.redirectUri}`
@@ -135,10 +136,10 @@ export async function integrationStatus(s, user, { live = false } = {}) {
     },
     microsoft: {
       configured: mConfigured, tenant: m.tenant, clientId: m.clientId ? `${m.clientId.slice(0, 8)}…` : null, client: mClient, redirect: mRedirect,
-      graph, scopes: ['openid email profile User.Read (sign-in)', 'Mail.Read', 'Files.Read', 'Sites.Read.All (work accounts)', 'offline_access'],
+      graph, scopes: ['openid email profile User.Read (sign-in)', 'Mail.Read', 'Files.Read', 'Sites.Read.All (work accounts)', 'Chat.Read (Teams, work accounts)', 'offline_access'],
       readiness: ready(mConfigured, mClient, mRedirect), requirements: microsoftReq
     },
-    connections: db.all("SELECT type, COUNT(*) AS sources, COUNT(DISTINCT owner_user_id) AS people FROM sources WHERE tenant_id = ? AND type IN ('gmail','gdrive','outlook','onedrive','sharepoint') AND status != 'disconnected' GROUP BY type", user.tenantId).map(x => ({ ...x })),
+    connections: db.all("SELECT type, COUNT(*) AS sources, COUNT(DISTINCT owner_user_id) AS people FROM sources WHERE tenant_id = ? AND type IN ('gmail','gdrive','outlook','onedrive','sharepoint','teams') AND status != 'disconnected' GROUP BY type", user.tenantId).map(x => ({ ...x })),
     errors
   };
 }

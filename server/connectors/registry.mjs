@@ -22,6 +22,7 @@ export const SOURCE_TYPES = Object.freeze({
   gdrive: { category: 'files', auth: 'oauth', syncs: true },
   onedrive: { category: 'files', auth: 'oauth', syncs: true },
   sharepoint: { category: 'files', auth: 'oauth', syncs: true },
+  teams: { category: 'messages', auth: 'oauth', syncs: true },
   database: { category: 'databases', auth: 'credentials', syncs: true },
   uploads: { category: 'imports', auth: 'import', syncs: false },
   messages: { category: 'messages', auth: 'import', syncs: false },
@@ -97,7 +98,7 @@ export function createRegistry(s) {
     switch (row.type) {
       case 'gmail': return s.gmail;
       case 'gdrive': return s.gdrive ?? null;
-      case 'outlook': case 'onedrive': case 'sharepoint': return s.microsoft;
+      case 'outlook': case 'onedrive': case 'sharepoint': case 'teams': return s.microsoft;
       case 'database': return { sync: (src) => s.database.sync(src), disconnect: async () => ({ revoked: null }) };
       case 'messages': return isPhoneLink(row) ? { sync: (src) => s.phonelink.sync(src), disconnect: async () => ({ revoked: null }) } : null;
       default: return null;
@@ -151,13 +152,14 @@ export function createRegistry(s) {
         if (row.type === 'gmail') await check('Gmail API answers', async () => { const p = await s.gmail.api(token, '/users/me/profile'); return `Mailbox ${p.emailAddress}, ${p.messagesTotal ?? '?'} messages in total.`; });
         else await check('Google Drive API answers', async () => { const a = await s.gdrive.api(token, '/about?fields=user(emailAddress)'); return `Drive of ${a.user?.emailAddress ?? 'this account'}.`; });
       }
-    } else if (row.type === 'outlook' || row.type === 'onedrive' || row.type === 'sharepoint') {
+    } else if (row.type === 'outlook' || row.type === 'onedrive' || row.type === 'sharepoint' || row.type === 'teams') {
       let token = null;
       await check('Stored Microsoft access accepted', async () => { token = await s.microsoft.accessToken(row); return 'Access token issued from the stored refresh token.'; });
       if (token) {
         const cfg = parseJson(row.config, {});
         if (row.type === 'outlook') await check('Outlook mail answers', async () => { const f = await s.microsoft.api(token, '/me/mailFolders/inbox?$select=totalItemCount', { prefer: 'IdType="ImmutableId"' }); return `Inbox reachable, ${f.totalItemCount ?? '?'} messages.`; });
         if (row.type === 'onedrive') await check('OneDrive answers', async () => { const d = await s.microsoft.api(token, '/me/drive?$select=id,driveType'); return `OneDrive (${d.driveType || 'drive'}) reachable.`; });
+        if (row.type === 'teams') await check('Teams chats answer', async () => { const c = await s.microsoft.api(token, '/me/chats?$top=1&$select=id'); return `Chats reachable${(c.value || []).length ? '' : ' (none yet)'}.`; });
         if (row.type === 'sharepoint') await check('SharePoint library answers', async () => { await s.microsoft.api(token, `/drives/${encodeURIComponent(cfg.driveId || '')}?$select=id,name`); return `Document library of ${cfg.siteUrl || 'the site'} reachable.`; });
       }
     } else if (row.type === 'database') {

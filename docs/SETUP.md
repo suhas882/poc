@@ -112,7 +112,7 @@ How it behaves:
 - In Google Workspace, an administrator may need to allow the app under *Security → API controls*.
 - If a sync stops with `rateLimitExceeded`, Gmail's per-minute quota was hit. The sync waits and retries on its own; what was fetched is kept, and already indexed messages are never fetched again. **Sync history** shows the endpoint, HTTP status and Google's reason for every failed run.
 
-## 6a. Outlook mail, OneDrive and SharePoint (Microsoft Graph)
+## 6a. Outlook mail, OneDrive, SharePoint and Teams (Microsoft Graph)
 
 Outlook and OneDrive work with personal Microsoft accounts (Outlook.com, Hotmail, Live) and work or school accounts. SharePoint exists only for work or school (Microsoft 365) accounts.
 
@@ -122,7 +122,7 @@ Outlook and OneDrive work with personal Microsoft accounts (Outlook.com, Hotmail
 2. Name it (for example *Public Records Search*). Under **Supported account types**, choose *Accounts in any organizational directory and personal Microsoft accounts*.
 3. Under **Redirect URI**, choose platform *Web* and enter `PUBLIC_URL/oauth/microsoft/callback`, for example `http://localhost:8765/oauth/microsoft/callback` (Microsoft allows http only for localhost; use your https address in production).
 4. Copy the **Application (client) ID**. Then open **Certificates & secrets → New client secret** and copy the secret's **Value** (it is shown once).
-5. Under **API permissions**, add *Microsoft Graph → Delegated*: `Mail.Read`, `Files.Read`, `User.Read`, `offline_access`, and for SharePoint `Sites.Read.All`. None of these need administrator consent for a personal account. In a work tenant the administrator may have turned off user consent; then use **Grant admin consent** on this page (or ask the tenant administrator to).
+5. Under **API permissions**, add *Microsoft Graph → Delegated*: `Mail.Read`, `Files.Read`, `User.Read`, `offline_access`, for SharePoint `Sites.Read.All`, and for Microsoft Teams chats `Chat.Read`. None of these need administrator consent for a personal account. In a work tenant the administrator may have turned off user consent; then use **Grant admin consent** on this page (or ask the tenant administrator to).
 6. Set `MICROSOFT_CLIENT_ID` and `MICROSOFT_CLIENT_SECRET` in `.env` and restart the server. **Settings → Server configuration** shows the redirect URI the server expects.
 7. In the app, go to **Connected Sources → Connect Outlook mail**, **Connect OneDrive** or **Connect SharePoint** (enter the site address, for example `https://contoso.sharepoint.com/sites/Records`), read the consent summary, and continue to Microsoft.
 
@@ -135,6 +135,10 @@ How it behaves:
 - **Disconnect** deletes the stored tokens and every indexed item. Microsoft has no revoke call for this flow; to remove the app from the account too, use [account.live.com/consent/Manage](https://account.live.com/consent/Manage) (personal) or [myapps.microsoft.com](https://myapps.microsoft.com) (work).
 
 - SharePoint: one source per site, reading the site's default document library with the same delta sync as OneDrive. Only `https://….sharepoint.com` addresses are accepted.
+
+## 6a-2. Connect via QR
+
+Gmail, Google Drive, Outlook mail, OneDrive, SharePoint and Teams can also be connected by scanning a QR code and signing in on a phone. It uses the same OAuth clients and redirect URIs, so nothing extra is registered. Open the site at its https `PUBLIC_URL`. See [QR-CONNECT.md](QR-CONNECT.md).
 
 ## 6b. Sync retries and source approval
 

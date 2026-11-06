@@ -107,7 +107,7 @@ export class GmailConnector {
   }
 
   /** Step 1: build Google's consent URL and remember the one-time state + PKCE verifier. */
-  authorize(user, { kind = 'gmail', query = this.config.gmail.defaultQuery, shareWithRoles = [], visibility = 'owner' } = {}) {
+  authorize(user, { kind = 'gmail', query = this.config.gmail.defaultQuery, shareWithRoles = [], visibility = 'owner', qrAttemptId = null } = {}) {
     this.assertReady();
     if (!(kind in GOOGLE_SCOPES)) throw new HttpError(400, 'invalid_kind', 'Choose Gmail or Google Drive.');
     const vault = /** @type {import('../security.mjs').Vault} */ (this.vault);
@@ -116,7 +116,7 @@ export class GmailConnector {
     const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
     this.db.run('DELETE FROM oauth_states WHERE expires_at < ?', nowIso());
     this.db.run('INSERT INTO oauth_states (state_hash, tenant_id, user_id, provider, verifier_ciphertext, options, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      sha256(state), user.tenantId, user.id, 'google', vault.seal(verifier), JSON.stringify({ kind, query, shareWithRoles, visibility }), new Date(Date.now() + STATE_TTL_MS).toISOString());
+      sha256(state), user.tenantId, user.id, 'google', vault.seal(verifier), JSON.stringify({ kind, query, shareWithRoles, visibility, ...(qrAttemptId ? { qrAttemptId } : {}) }), new Date(Date.now() + STATE_TTL_MS).toISOString());
     const g = this.config.google;
     const url = new URL(g.authUrl);
     url.search = new URLSearchParams({
@@ -125,7 +125,8 @@ export class GmailConnector {
       // after that the stored refresh token keeps the source working without asking again.
       access_type: 'offline', prompt: 'consent', include_granted_scopes: 'false', login_hint: user.email || '', state, code_challenge: challenge, code_challenge_method: 'S256'
     }).toString();
-    return { url: url.toString(), scopes: [GOOGLE_SCOPES[kind]] };
+    // stateHash lets a QR-assisted connection bind this exact OAuth state to its attempt.
+    return { url: url.toString(), scopes: [GOOGLE_SCOPES[kind]], stateHash: sha256(state) };
   }
 
   /** Step 2: Google redirects back with ?code&state. Exchange the code and create (or refresh) the source. */

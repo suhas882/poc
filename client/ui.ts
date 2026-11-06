@@ -117,7 +117,7 @@ export function field(label: string, control: HTMLElement, hint?: string) {
 }
 
 export const ROLE_LABEL: Record<string, string> = { admin: 'Supervisor', records_officer: 'Clerk', reviewer: 'Records Coordinator', auditor: 'Auditor' };
-export const SOURCE_LABEL: Record<string, string> = { gmail: 'Gmail', gdrive: 'Google Drive', outlook: 'Outlook mail', onedrive: 'OneDrive', uploads: 'Uploaded document', messages: 'Message import', database: 'Database', synthetic: 'Synthetic corpus', stub: 'Not connected' };
+export const SOURCE_LABEL: Record<string, string> = { gmail: 'Gmail', gdrive: 'Google Drive', outlook: 'Outlook mail', onedrive: 'OneDrive', sharepoint: 'SharePoint', teams: 'Microsoft Teams', uploads: 'Uploaded document', messages: 'Message import', database: 'Database', synthetic: 'Synthetic corpus', stub: 'Not connected' };
 export const MARK_LABEL: Record<string, string> = { relevant: 'Relevant', not_relevant: 'Not relevant', unsure: 'Unsure' };
 
 /** Status pill: an icon character plus words, never color alone. */

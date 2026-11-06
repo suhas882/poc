@@ -15,7 +15,7 @@ import { MicrosoftApiError } from '../connectors/microsoft.mjs';
 import { CATEGORY_LABEL, initialSharing, SOURCE_TYPES } from '../connectors/registry.mjs';
 
 /** Pack placeholders that a connected source of this type replaces ("Exchange mail" by Outlook, "OneDrive" by OneDrive). */
-const STUB_COVERED_BY = { exchange: 'outlook', onedrive: 'onedrive', sharepoint: 'sharepoint' };
+const STUB_COVERED_BY = { exchange: 'outlook', onedrive: 'onedrive', sharepoint: 'sharepoint', teams: 'teams' };
 
 /** The pack's not-connected placeholders, minus those this organization has actually connected. */
 export function openStubs(db, tenantId, pack) {
@@ -89,7 +89,8 @@ function fullCatalog(s) {
     { type: 'gdrive', name: 'Google Drive', description: 'Read-only access to the files in one Google Drive (My Drive and files shared with you) through Google sign-in. Google Docs, Sheets and Slides are exported as text; PDF, Word, Excel, CSV, text and image files are indexed. Later syncs pick up changes, trashed and removed files.', permissions: ['See and download your Drive files (drive.readonly)'], ...st(s.gmail.configured && s.vault, !s.gmail.configured ? 'An administrator needs to add Google OAuth credentials (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET).' : 'Credential encryption key is missing.') },
     { type: 'outlook', name: 'Outlook mail', description: 'Read-only access to one Outlook.com or Microsoft 365 mailbox through Microsoft sign-in. Deleted Items and Junk are skipped. Attachments in supported formats are indexed too.', permissions: ['Read your mail (Mail.Read)', 'Your basic profile, to label the source (User.Read)'], ...st(s.microsoft.configured && s.vault, !s.microsoft.configured ? 'An administrator needs to add Microsoft sign-in credentials (MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET).' : 'Credential encryption key is missing.') },
     { type: 'onedrive', name: 'OneDrive', description: 'Read-only access to the files in one OneDrive through Microsoft sign-in. PDF, Word, Excel, CSV, text and image files are indexed; changes and deletions are picked up on each sync.', permissions: ['Read your files (Files.Read)', 'Your basic profile, to label the source (User.Read)'], ...st(s.microsoft.configured && s.vault, !s.microsoft.configured ? 'An administrator needs to add Microsoft sign-in credentials (MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET).' : 'Credential encryption key is missing.') },
-    { type: 'sharepoint', name: 'SharePoint', description: 'Read-only access to the document library of one SharePoint site, for a Microsoft 365 work or school account. Personal Outlook.com accounts have no SharePoint. Changes and deletions are picked up on each sync.', permissions: ['Read items in sites you can already open (Sites.Read.All, delegated)', 'Your basic profile (User.Read)'], note: 'Some organizations require an administrator to approve this permission for the app in Microsoft Entra before anyone can connect.', ...st(s.microsoft.configured && s.vault, !s.microsoft.configured ? 'An administrator needs to add Microsoft sign-in credentials (MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET).' : 'Credential encryption key is missing.') }
+    { type: 'sharepoint', name: 'SharePoint', description: 'Read-only access to the document library of one SharePoint site, for a Microsoft 365 work or school account. Personal Outlook.com accounts have no SharePoint. Changes and deletions are picked up on each sync.', permissions: ['Read items in sites you can already open (Sites.Read.All, delegated)', 'Your basic profile (User.Read)'], note: 'Some organizations require an administrator to approve this permission for the app in Microsoft Entra before anyone can connect.', ...st(s.microsoft.configured && s.vault, !s.microsoft.configured ? 'An administrator needs to add Microsoft sign-in credentials (MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET).' : 'Credential encryption key is missing.') },
+    { type: 'teams', name: 'Microsoft Teams', description: 'Read-only access to your own Teams chats (one-to-one, group and meeting chats) through Microsoft sign-in, for a Microsoft 365 work or school account. Each message becomes a searchable record; edits and deletions are picked up on each sync. Channel posts are not included.', permissions: ['Read your chat messages (Chat.Read, delegated)', 'Your basic profile (User.Read)'], note: 'Work or school accounts only: Microsoft does not offer Teams chats of personal accounts to other apps. Some organizations require an administrator to approve Chat.Read first.', ...st(s.microsoft.configured && s.vault, !s.microsoft.configured ? 'An administrator needs to add Microsoft sign-in credentials (MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET).' : 'Credential encryption key is missing.') }
   ];
 }
 
@@ -116,6 +117,7 @@ function sourceView(row, user, running, registry) {
     : row.type === 'onedrive' ? [{ name: 'All files in this OneDrive', kind: 'onedrive_root' }]
     : row.type === 'gdrive' ? [{ name: 'My Drive and files shared with you, except the trash', kind: 'gdrive_all' }]
     : row.type === 'sharepoint' ? [{ name: `Document library of ${cfg.siteUrl || 'the site'}`, kind: 'sharepoint_library' }]
+    : row.type === 'teams' ? [{ name: `Your Teams chats from the last ${Math.round((Number(cfg.days) || 730) / 30)} months (not channel posts)`, kind: 'teams_chats' }]
     : row.type === 'database' ? (cfg.tables || []).map(t => ({ name: t.name, kind: 'table', columns: [t.idColumn, t.titleColumn, ...(t.contentColumns || [])] }))
     : [];
   return {
@@ -410,6 +412,8 @@ export function registerSourceRoutes(router, s) {
     const signin = s.signin.pending(req, 'google', url.searchParams.get('state'));
     if (signin?.mode === 'link') return finishLink('google', signin, { res, url, user, ipHash });
     if (signin) return finishSignIn('google', signin, { res, url, ipHash });
+    // A "Connect via QR" attempt finishing on a phone: bound to the attempt's user, not to this browser's session.
+    if (await s.qrConnect?.handleCallback('google', { res, url, ipHash })) return;
     const redirect = (q) => { res.writeHead(302, { Location: `/sources.html?${new URLSearchParams(q)}`, 'Cache-Control': 'no-store', ...SECURITY_HEADERS }); res.end(); };
     if (!user) return redirect({ error: 'Your session ended before Google finished. Sign in and connect Gmail again.' });
     try {
@@ -431,7 +435,7 @@ export function registerSourceRoutes(router, s) {
   router.on('POST', '/api/connectors/microsoft/authorize', async ({ req, res, user, ipHash }) => {
     if (user) realGate(user);
     requirePermission(user, 'sources.manage');
-    const body = validate({ kind: { type: 'string', values: ['outlook', 'onedrive', 'sharepoint'], required: true }, visibility: { type: 'string', values: ['org', 'owner', 'roles'], default: 'owner' }, siteUrl: { type: 'string', max: 500, default: '' }, shareWithRoles: { ...roleList, default: [] } }, await readJson(req));
+    const body = validate({ kind: { type: 'string', values: ['outlook', 'onedrive', 'sharepoint', 'teams'], required: true }, visibility: { type: 'string', values: ['org', 'owner', 'roles'], default: 'owner' }, siteUrl: { type: 'string', max: 500, default: '' }, shareWithRoles: { ...roleList, default: [] } }, await readJson(req));
     const result = s.microsoft.authorize(user, body);
     audit.write({ tenantId: user.tenantId, userId: user.id, action: 'source.oauth_started', targetType: 'connector', targetId: body.kind, ipHash, details: { scopes: result.scopes } });
     ok(res, result);
@@ -441,6 +445,7 @@ export function registerSourceRoutes(router, s) {
     const signin = s.signin.pending(req, 'microsoft', url.searchParams.get('state'));
     if (signin?.mode === 'link') return finishLink('microsoft', signin, { res, url, user, ipHash });
     if (signin) return finishSignIn('microsoft', signin, { res, url, ipHash });
+    if (await s.qrConnect?.handleCallback('microsoft', { res, url, ipHash })) return;
     const redirect = (q) => { res.writeHead(302, { Location: `/sources.html?${new URLSearchParams(q)}`, 'Cache-Control': 'no-store', ...SECURITY_HEADERS }); res.end(); };
     if (!user) return redirect({ error: 'Your session ended before Microsoft finished. Sign in and connect again.' });
     try {

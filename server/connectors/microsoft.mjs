@@ -3,8 +3,8 @@
  * Microsoft Graph connector: Outlook mail (Mail.Read) and OneDrive files (Files.Read), one source each.
  * OAuth 2.0 authorization-code flow with PKCE against the Microsoft identity platform. Read-only scopes only;
  * we never see or store the user's password. Tokens are encrypted at rest.
- * Works with personal accounts (Outlook.com, Hotmail) and work or school accounts. SharePoint and Teams exist
- * only for work or school (Microsoft 365) accounts and are not part of this connector.
+ * Works with personal accounts (Outlook.com, Hotmail) and work or school accounts. SharePoint (Sites.Read.All) and
+ * Teams chats (Chat.Read) exist only for work or school (Microsoft 365) accounts.
  */
 import crypto from 'node:crypto';
 import { HttpError } from '../http.mjs';
@@ -23,10 +23,12 @@ export const MICROSOFT_SCOPES = Object.freeze({
   outlook: ['offline_access', 'User.Read', 'Mail.Read'],
   onedrive: ['offline_access', 'User.Read', 'Files.Read'],
   // Work or school accounts only. Delegated: reads only sites the signed-in person can already open.
-  sharepoint: ['offline_access', 'User.Read', 'Sites.Read.All']
+  sharepoint: ['offline_access', 'User.Read', 'Sites.Read.All'],
+  // Work or school accounts only. Delegated: the person's own 1:1, group and meeting chats. Not channel posts.
+  teams: ['offline_access', 'User.Read', 'Chat.Read']
 });
-const NEEDED = { outlook: 'mail.read', onedrive: 'files.read', sharepoint: 'sites.read.all' };
-const LABEL = { outlook: 'Outlook mail', onedrive: 'OneDrive', sharepoint: 'SharePoint' };
+const NEEDED = { outlook: 'mail.read', onedrive: 'files.read', sharepoint: 'sites.read.all', teams: 'chat.read' };
+const LABEL = { outlook: 'Outlook mail', onedrive: 'OneDrive', sharepoint: 'SharePoint', teams: 'Microsoft Teams' };
 // Immutable IDs survive moving a message between folders; plain-text bodies avoid HTML clean-up.
 const MAIL_PREFER = 'IdType="ImmutableId", outlook.body-content-type="text"';
 
@@ -103,9 +105,9 @@ export class MicrosoftConnector {
   }
 
   /** Step 1: Microsoft's sign-in URL, with a one-time state and PKCE verifier remembered here. */
-  authorize(user, { kind, shareWithRoles = [], siteUrl = '', visibility = 'owner' }) {
+  authorize(user, { kind, shareWithRoles = [], siteUrl = '', visibility = 'owner', qrAttemptId = null }) {
     this.assertReady();
-    if (!(kind in MICROSOFT_SCOPES)) throw new HttpError(400, 'invalid_kind', 'Choose Outlook mail, OneDrive or SharePoint.');
+    if (!(kind in MICROSOFT_SCOPES)) throw new HttpError(400, 'invalid_kind', 'Choose Outlook mail, OneDrive, SharePoint or Teams.');
     if (kind === 'sharepoint') parseSiteUrl(siteUrl);
     const vault = /** @type {import('../security.mjs').Vault} */ (this.vault);
     const state = randomToken(24);
@@ -113,14 +115,14 @@ export class MicrosoftConnector {
     const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
     this.db.run('DELETE FROM oauth_states WHERE expires_at < ?', nowIso());
     this.db.run('INSERT INTO oauth_states (state_hash, tenant_id, user_id, provider, verifier_ciphertext, options, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      sha256(state), user.tenantId, user.id, 'microsoft', vault.seal(verifier), JSON.stringify({ kind, shareWithRoles, siteUrl, visibility }), new Date(Date.now() + STATE_TTL_MS).toISOString());
+      sha256(state), user.tenantId, user.id, 'microsoft', vault.seal(verifier), JSON.stringify({ kind, shareWithRoles, siteUrl, visibility, ...(qrAttemptId ? { qrAttemptId } : {}) }), new Date(Date.now() + STATE_TTL_MS).toISOString());
     const m = this.config.microsoft;
     const url = new URL(this.endpoints.auth);
     url.search = new URLSearchParams({
       client_id: m.clientId, response_type: 'code', redirect_uri: m.redirectUri, response_mode: 'query',
       scope: MICROSOFT_SCOPES[kind].join(' '), state, code_challenge: challenge, code_challenge_method: 'S256', prompt: 'select_account', login_hint: user.email || ''
     }).toString();
-    return { url: url.toString(), scopes: MICROSOFT_SCOPES[kind] };
+    return { url: url.toString(), scopes: MICROSOFT_SCOPES[kind], stateHash: sha256(state) };
   }
 
   async tokenRequest(params, endpoint) {
@@ -170,7 +172,7 @@ export class MicrosoftConnector {
         this.db.run(`INSERT INTO sources (id, tenant_id, type, name, status, owner_user_id, visibility, allowed_roles, config, scopes, account_label)
           VALUES (?, ?, ?, ?, 'connected', ?, ?, ?, ?, ?, ?)`,
         id, user.tenantId, kind, site ? `SharePoint: ${site.name}` : `${LABEL[kind]}: ${email}`, user.id, sharing.visibility, JSON.stringify(sharing.allowedRoles),
-        JSON.stringify(kind === 'outlook' ? { days: m.mailDays } : site ? { siteId: site.id, driveId: site.driveId, siteUrl: site.webUrl, connectedAs: email } : {}), JSON.stringify(granted), label);
+        JSON.stringify(kind === 'outlook' || kind === 'teams' ? { days: m.mailDays } : site ? { siteId: site.id, driveId: site.driveId, siteUrl: site.webUrl, connectedAs: email } : {}), JSON.stringify(granted), label);
       }
       this.saveCredentials(id, creds);
     });
@@ -265,6 +267,7 @@ export class MicrosoftConnector {
       if (!cfg.driveId) throw new HttpError(409, 'reconnect_required', 'This SharePoint source has no document library recorded. Reconnect it.');
       return this.syncDrive(source, token, counts, diag, full, `/drives/${encodeURIComponent(cfg.driveId)}`);
     }
+    if (source.type === 'teams') return this.syncTeams(source, token, counts, diag, full);
     return source.type === 'onedrive' ? this.syncDrive(source, token, counts, diag, full) : this.syncMail(source, token, counts, diag);
   }
 
@@ -386,6 +389,76 @@ export class MicrosoftConnector {
     }
     // Keep the old cursor when cut short, so the next run sees the same changes again (indexed files are skipped).
     if (!counts.truncated && deltaLink) this.db.run('UPDATE sources SET sync_cursor = ? WHERE id = ?', deltaLink, source.id);
+    return counts;
+  }
+
+  /**
+   * Teams: the signed-in person's chats (1:1, group and meeting chats), one record per message. Incremental: per chat,
+   * only messages modified after the last sync are listed (Graph allows $filter on lastModifiedDateTime with
+   * $orderby desc). Deleted messages are removed from the index. Channel posts are not read (they need
+   * ChannelMessage.Read.All, which always needs administrator consent).
+   */
+  async syncTeams(source, token, counts, diag, full) {
+    const cfg = parseJson(source.config, {});
+    const ctx = { tenantId: source.tenant_id, sourceId: source.id, sourceType: 'teams' };
+    const api = (p) => this.api(token, p, { diag });
+    const max = this.config.microsoft.maxItemsPerSync;
+    const now = new Date().toISOString();
+    const since = new Date(Date.now() - (Number(cfg.days) || this.config.microsoft.mailDays) * 86400_000).toISOString();
+    /** @type {Record<string, string>} chat id -> newest lastModifiedDateTime already indexed */
+    const marks = full ? {} : parseJson(source.sync_cursor, {});
+    const me = await api('/me?$select=id');
+
+    /** @type {any[]} */ const chats = [];
+    let next = `/me/chats?${new URLSearchParams({ $expand: 'members', $top: '50' })}`;
+    while (next) {
+      const page = await api(next);
+      chats.push(...(page.value || []));
+      next = page['@odata.nextLink'] || '';
+    }
+    diag.listed = chats.length;
+
+    for (const chat of chats) {
+      const mark = marks[chat.id] || since;
+      if (chat.lastUpdatedDateTime && new Date(chat.lastUpdatedDateTime).toISOString() <= mark) continue;
+      const others = (chat.members || []).filter(m => m.userId !== me.id).map(m => m.displayName).filter(Boolean);
+      const label = chat.topic || others.join(', ') || (chat.chatType === 'oneOnOne' ? 'Chat' : 'Group chat');
+      const members = (chat.members || []).map(m => m.displayName).filter(Boolean);
+      let newest = mark, done = true;
+      let page = `/me/chats/${encodeURIComponent(chat.id)}/messages?${new URLSearchParams({
+        $top: '50', $orderby: 'lastModifiedDateTime desc', $filter: `lastModifiedDateTime gt ${mark} and lastModifiedDateTime lt ${now}`
+      })}`;
+      while (page) {
+        const res = await api(page);
+        for (const msg of res.value || []) {
+          const id = `${chat.id}|${msg.id}`;
+          const modified = msg.lastModifiedDateTime ? new Date(msg.lastModifiedDateTime).toISOString() : null;
+          if (modified && modified > newest) newest = modified;
+          if (msg.deletedDateTime) { counts.deleted += this.deleteItem(source.id, id); continue; }
+          if (msg.messageType !== 'message') { counts.skipped++; continue; }
+          if (diag.attempted >= max) { counts.truncated = true; done = false; break; }
+          diag.attempted++; diag.fetched++;
+          const text = (msg.body?.contentType === 'html' ? htmlToText(msg.body.content || '') : String(msg.body?.content || '')).trim();
+          const files = (msg.attachments || []).map(a => a.name).filter(Boolean);
+          if (!text && !files.length) { counts.skipped++; continue; }
+          const from = msg.from?.user?.displayName || msg.from?.application?.displayName || 'Unknown';
+          const when = msg.createdDateTime ? new Date(msg.createdDateTime).toISOString() : null;
+          const r = upsertRecord(this.db, ctx, {
+            sourceRecordId: id, title: `Teams: ${label}${when ? `, ${when.slice(0, 16).replace('T', ' ')}` : ''}`,
+            content: `${from}: ${text}${files.length ? `\n[Attached: ${files.join(', ')}]` : ''}`.slice(0, 200000),
+            sender: from, recipients: members.filter(n => n !== from), createdAt: when, modifiedAt: modified,
+            documentType: 'Teams message', threadKey: `teams:${chat.id}`, sourceUrl: chat.webUrl || undefined, keywords: undefined, accessPermissions: {}
+          });
+          counts[r.status === 'unchanged' ? 'skipped' : r.status]++;
+        }
+        if (!done) break;
+        page = res['@odata.nextLink'] || '';
+      }
+      // Only move a chat's mark forward when all its changes were read, so a cut-short sync resumes correctly.
+      if (done) marks[chat.id] = newest;
+      if (counts.truncated) break;
+    }
+    this.db.run('UPDATE sources SET sync_cursor = ? WHERE id = ?', JSON.stringify(marks), source.id);
     return counts;
   }
 

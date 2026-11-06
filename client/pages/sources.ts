@@ -17,7 +17,7 @@ const LIFECYCLE: Record<string, [string, string]> = {
   unsupported: ['Not available yet', 'planned'], not_connected: ['Not connected', 'not_connected']
 };
 const CATEGORY: Record<string, string> = { email: 'Email', files: 'Files and documents', messages: 'Text messages', databases: 'Databases', imports: 'Uploads and imports', demo: 'Demo data', planned: 'Not connected in this proof of concept' };
-const ICON: Record<string, string> = { public: 'P', stub: '\u25CC', phonelink: '✆', android: '📱', gmail: '✉', uploads: '⇪', messages: '✆', database: '⛁', synthetic: '◇', gdrive: '△', onedrive: '☁', sharepoint: '▦', outlook: '✉' };
+const ICON: Record<string, string> = { public: 'P', stub: '\u25CC', phonelink: '✆', android: '📱', gmail: '✉', uploads: '⇪', messages: '✆', database: '⛁', synthetic: '◇', gdrive: '△', onedrive: '☁', teams: '💬', sharepoint: '▦', outlook: '✉' };
 let status: AuthStatus;
 let sys: SystemStatus | null = null;
 let pollTimer = 0;
@@ -234,10 +234,11 @@ async function loadConnectors() {
     else if (c.type === 'phonelink' && manage) action = h('div', { class: 'card-actions' },
       c.local ? h('button', { type: 'button', class: 'button primary', on: { click: () => phoneLink() } }, 'Check this PC') : null,
       h('button', { type: 'button', class: c.local ? 'button secondary' : 'button primary', on: { click: () => syncHelper() } }, 'PC sync helper'));
-    else if (c.type === 'android' && manage) action = h('button', { type: 'button', class: 'button primary', on: { click: () => phoneDialog() } }, c.lifecycle === 'connected' ? 'Phones' : 'Connect phone');
-    else if (c.type === 'gmail' && manage) action = h('button', { type: 'button', class: 'button primary', on: { click: () => startGmail() } }, 'Connect Gmail');
-    else if (c.type === 'gdrive' && manage) action = h('button', { type: 'button', class: 'button primary', on: { click: () => startDrive() } }, 'Connect Google Drive');
-    else if (isMicrosoft(c.type) && manage) action = h('button', { type: 'button', class: 'button primary', on: { click: () => startMicrosoft(c.type as MsKind) } }, `Connect ${MS_NAME[c.type as MsKind]}`);
+    else if (c.type === 'android' && manage) action = h('div', { class: 'card-actions' }, h('button', { type: 'button', class: 'button primary', on: { click: () => phoneDialog() } }, c.lifecycle === 'connected' ? 'Phones' : 'Connect phone'),
+      qrButton(() => phoneDialog(), 'Pair via QR'));
+    else if (c.type === 'gmail' && manage) action = h('div', { class: 'card-actions' }, h('button', { type: 'button', class: 'button primary', on: { click: () => startGmail() } }, 'Connect Gmail'), qrButton(() => startGmail('qr')));
+    else if (c.type === 'gdrive' && manage) action = h('div', { class: 'card-actions' }, h('button', { type: 'button', class: 'button primary', on: { click: () => startDrive() } }, 'Connect Google Drive'), qrButton(() => startDrive('qr')));
+    else if (isMicrosoft(c.type) && manage) action = h('div', { class: 'card-actions' }, h('button', { type: 'button', class: 'button primary', on: { click: () => startMicrosoft(c.type as MsKind) } }, `Connect ${MS_NAME[c.type as MsKind]}`), qrButton(() => startMicrosoft(c.type as MsKind, 'qr')));
     else if (c.type === 'uploads' && upload) action = fileButton('Choose files', 'uploads');
     else if (c.type === 'messages' && upload) action = h('div', { class: 'card-actions' }, fileButton('Choose export files', 'messages'), h('button', { type: 'button', class: 'button secondary', on: { click: exportGuide } }, 'How to export messages'));
     else if (c.type === 'database' && manage) action = h('button', { type: 'button', class: 'button primary', on: { click: () => dbWizard(c.driver!) } }, `Connect ${c.name}`);
@@ -556,14 +557,119 @@ function exportGuide() {
     h('p', { class: 'helper' }, 'Only import messages your organization is entitled to hold as records, and follow your policy on telling the people involved. Imports are private to you unless you share the source, and every import is written to the audit log.')), { wide: true });
 }
 
+/* ---------------- Connect via QR ---------------- */
+
+type QrApp = 'gmail' | 'gdrive' | MsKind;
+interface QrAttempt { attemptId: string; app: QrApp; appName: string; provider: 'google' | 'microsoft'; status: 'pending' | 'authorizing' | 'connected' | 'failed' | 'cancelled' | 'expired'; matchCode: string; expiresAt: string; account: string | null; sourceId: string | null; error: string | null; qrPath?: string }
+
+function qrButton(run: () => void, label = 'Connect via QR') {
+  return h('button', { type: 'button', class: 'button secondary', on: { click: run } }, h('span', { 'aria-hidden': 'true' }, '▣ '), label);
+}
+
+function qrIntro(provider: string) {
+  return h('div', { class: 'alert alert-info', role: 'note' },
+    h('p', null, `Choose the options below, then scan the QR code with your phone. You sign in to ${provider} on the phone; this computer updates by itself. The code is for this connection only, expires in 3 minutes and works once.`));
+}
+
+/** The QR code as an image, scaled by whole pixels per module so phone cameras read it reliably. */
+function qrImage(text: string, alt: string, target = 232) {
+  const n = qrMatrix(text).length + 8;
+  const px = n * Math.max(4, Math.floor(target / n));
+  return h('img', { src: qrSvgDataUrl(text), alt, width: px, height: px, class: 'pair-qr' });
+}
+
+/**
+ * Start a QR-assisted connection and watch it. The QR code holds only this site's /qr/<reference> address; the phone
+ * then goes through the provider's own sign-in. The page updates when the server has validated the provider's answer.
+ */
+async function qrConnect(app: QrApp, options: Record<string, unknown>, normal: () => void) {
+  const body = h('div', { class: 'qr-connect' });
+  let attempt: QrAttempt | null = null;
+  let timer = 0;
+  const stop = () => { window.clearInterval(timer); timer = 0; };
+  // Cancel on the server as soon as the person leaves this dialog (Cancel, ×, Escape or closing), so the phone can no longer finish it.
+  // Attempts that are left open also expire on their own (3 minutes to scan, 10 to sign in).
+  const cancel = () => {
+    if (attempt && (attempt.status === 'pending' || attempt.status === 'authorizing')) { const id = attempt.attemptId; attempt = { ...attempt, status: 'cancelled' }; post('/api/connections/qr/cancel', { attemptId: id }).catch(() => undefined); }
+  };
+  const dlg = openDialog(`Connect ${app === 'gmail' ? 'Gmail' : app === 'gdrive' ? 'Google Drive' : MS_NAME[app as MsKind]} via QR`, body, { onClose: () => { stop(); cancel(); } });
+  dlg.querySelector('.modal-head .icon-button')?.addEventListener('click', () => { stop(); cancel(); });
+  dlg.addEventListener('cancel', () => { stop(); cancel(); });
+  const provider = app === 'gmail' || app === 'gdrive' ? 'Google' : 'Microsoft';
+  const fallback = h('button', { type: 'button', class: 'button secondary', on: { click: () => { stop(); cancel(); attempt = null; dlg.close(); normal(); } } }, 'Connect normally');
+  const statusLine = h('p', { class: 'qr-status', role: 'status', 'aria-live': 'polite' });
+  const countdown = h('p', { class: 'hint' });
+  replace(body, h('p', { class: 'helper' }, 'Creating a QR code…'));
+
+  const start = async () => {
+    stop();
+    try { attempt = (await post<QrAttempt>('/api/connections/qr/start', { app, ...options })).data; }
+    catch (e) { replace(body, alertBox(e instanceof ApiError ? e.message : 'Could not create a QR code.'), h('div', { class: 'card-actions' }, fallback)); return; }
+    const url = new URL(attempt.qrPath!, location.origin).toString();
+    const local = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+    replace(body,
+      local ? alertBox(`This page is open at ${location.origin}, which a phone cannot reach. Open the site at its public https address to use QR codes, or use Connect normally.`, 'warn')
+        : location.protocol !== 'https:' ? alertBox('This site is open over plain http. Open it at its https:// address before using QR codes.', 'warn') : null,
+      h('div', { class: 'qr-connect-body' },
+        qrImage(url, `QR code to connect ${attempt.appName} on your phone`),
+        h('div', null,
+          h('p', { class: 'qr-match' }, h('span', { class: 'helper' }, 'Match number'), h('b', null, attempt.matchCode)),
+          h('ol', { class: 'guide-steps' },
+            h('li', null, 'Scan the code with your phone’s camera and open the link.'),
+            h('li', null, `Check that the phone shows the number ${attempt.matchCode}, then tap Continue.`),
+            h('li', null, `Sign in to ${provider} and allow read-only access.`)),
+          countdown)),
+      statusLine,
+      h('div', { class: 'card-actions' }, fallback, h('button', { type: 'button', class: 'button secondary', on: { click: () => { stop(); cancel(); dlg.close(); } } }, 'Cancel')));
+    render();
+    timer = window.setInterval(poll, 2000);
+  };
+
+  const render = () => {
+    if (!attempt) return;
+    const left = Date.parse(attempt.expiresAt) - Date.now();
+    countdown.textContent = attempt.status === 'pending'
+      ? `Expires in ${left > 0 ? `${Math.floor(left / 60000)}:${String(Math.floor(left / 1000) % 60).padStart(2, '0')}` : '0:00'}. Works once.`
+      : 'This code has been used. Each code works once.';
+    const again = h('button', { type: 'button', class: 'button primary', on: { click: () => start() } }, 'New QR code');
+    switch (attempt.status) {
+      case 'pending': replace(statusLine, h('span', { class: 'pill info' }, 'Waiting'), ' Waiting for you to scan the code…'); break;
+      case 'authorizing': replace(statusLine, h('span', { class: 'pill warn' }, 'Signing in'), ` Code scanned. Finish signing in to ${provider} on your phone…`); break;
+      case 'connected': {
+        stop();
+        replace(body, alertBox(`${attempt.appName} is connected${attempt.account ? ` as ${attempt.account}` : ''}. It now appears under Connected sources.`, 'ok'),
+          h('div', { class: 'card-actions' }, h('button', { type: 'button', class: 'button primary', on: { click: () => dlg.close() } }, 'Done')));
+        toast(`${attempt.appName} connected`);
+        loadSources(); loadConnectors();
+        break;
+      }
+      case 'failed': stop(); replace(statusLine, alertBox(attempt.error || 'The connection was not completed.')); statusLine.append(h('div', { class: 'card-actions' }, again)); break;
+      case 'expired': stop(); replace(statusLine, alertBox('The QR code expired before the connection finished.', 'warn')); statusLine.append(h('div', { class: 'card-actions' }, again)); break;
+      case 'cancelled': stop(); replace(statusLine, alertBox('This connection was cancelled.', 'info')); statusLine.append(h('div', { class: 'card-actions' }, again)); break;
+    }
+  };
+
+  const poll = async () => {
+    // Stop (and cancel) if the dialog was closed some other way.
+    if (!dlg.open) { stop(); cancel(); return; }
+    if (!attempt) return;
+    try { attempt = (await get<QrAttempt>(`/api/connections/qr/status/${attempt.attemptId}`)).data; render(); }
+    catch { /* keep trying; the countdown still runs */ }
+  };
+
+  start();
+}
+
 /* ---------------- Gmail consent ---------------- */
 
-function startGmail() {
+function startGmail(mode: 'normal' | 'qr' = 'normal') {
   const query = h('input', { id: 'g-query', value: 'newer_than:2y' }) as HTMLInputElement;
   query.value = 'newer_than:2y';
   const share = sharingPicker();
-  const go = h('button', { type: 'button', class: 'button primary' }, 'Continue to Google');
-  const dlg = openDialog('Connect a Gmail account', h('div', { class: 'consent' },
+  const go = h('button', { type: 'button', class: 'button primary' }, mode === 'qr' ? 'Show QR code' : 'Continue to Google');
+  const alt = h('button', { type: 'button', class: 'button secondary' }, mode === 'qr' ? 'Connect normally' : 'Connect via QR instead');
+  const dlg = openDialog(mode === 'qr' ? 'Connect Gmail via QR' : 'Connect a Gmail account', h('div', { class: 'consent' },
+    mode === 'qr' ? qrIntro('Google') : null,
     h('p', null, 'You’ll be sent to Google to sign in and approve access. This app never sees or stores your Google password.'),
     h('h3', null, 'What this app will ask Google for'),
     h('ul', null, h('li', null, h('b', null, 'Read your email messages and settings'), ' (', h('code', null, 'gmail.readonly'), '). It cannot send, delete, or change anything in your mailbox.')),
@@ -574,60 +680,81 @@ function startGmail() {
       h('li', null, 'Disconnecting revokes the access at Google and deletes every copied message and attachment.')),
     field('Which messages to include (Gmail search syntax)', query, 'For example: newer_than:1y, label:records, from:contractor.com. Leave empty for all mail except spam and trash.'),
     share.el,
-    h('div', { class: 'form-row' }, go)));
-  go.addEventListener('click', async () => {
+    h('div', { class: 'form-row' }, go, alt)));
+  const options = () => ({ query: query.value.trim(), ...share.value() });
+  const normal = async (btn: HTMLButtonElement) => {
     try {
-      const res = await busy(go, 'Opening Google…', () => post<{ url: string }>('/api/connectors/gmail/authorize', { query: query.value.trim(), ...share.value() }));
+      const res = await busy(btn, 'Opening Google…', () => post<{ url: string }>('/api/connectors/gmail/authorize', options()));
       location.href = res.data.url;
     } catch (e) { dlg.querySelector('.modal-body')!.append(alertBox(e instanceof ApiError ? e.message : 'Could not start the connection.')); }
-  });
+  };
+  const viaQr = () => { dlg.close(); qrConnect('gmail', options(), () => startGmail()); };
+  go.addEventListener('click', () => mode === 'qr' ? viaQr() : normal(go));
+  alt.addEventListener('click', () => mode === 'qr' ? normal(alt) : viaQr());
 }
 
 /* ---------------- Microsoft consent (Outlook mail, OneDrive) ---------------- */
 
-type MsKind = 'outlook' | 'onedrive' | 'sharepoint';
-const MS_NAME: Record<MsKind, string> = { outlook: 'Outlook mail', onedrive: 'OneDrive', sharepoint: 'SharePoint' };
-const isMicrosoft = (type: string): boolean => type === 'outlook' || type === 'onedrive' || type === 'sharepoint';
+type MsKind = 'outlook' | 'onedrive' | 'sharepoint' | 'teams';
+const MS_NAME: Record<MsKind, string> = { outlook: 'Outlook mail', onedrive: 'OneDrive', sharepoint: 'SharePoint', teams: 'Microsoft Teams' };
+const isMicrosoft = (type: string): boolean => type === 'outlook' || type === 'onedrive' || type === 'sharepoint' || type === 'teams';
 
-function startMicrosoft(kind: MsKind) {
+function startMicrosoft(kind: MsKind, mode: 'normal' | 'qr' = 'normal') {
   const share = sharingPicker();
-  const go = h('button', { type: 'button', class: 'button primary' }, 'Continue to Microsoft');
+  const go = h('button', { type: 'button', class: 'button primary' }, mode === 'qr' ? 'Show QR code' : 'Continue to Microsoft');
+  const alt = h('button', { type: 'button', class: 'button secondary' }, mode === 'qr' ? 'Connect normally' : 'Connect via QR instead');
   const site = h('input', { id: 'sp-site', type: 'url', placeholder: 'https://contoso.sharepoint.com/sites/Records' }) as HTMLInputElement;
   const what = kind === 'outlook'
     ? [h('li', null, h('b', null, 'Read your mail'), ' (', h('code', null, 'Mail.Read'), '). It cannot send, delete, move or change any message.')]
+    : kind === 'teams'
+      ? [h('li', null, h('b', null, 'Read your chat messages'), ' (', h('code', null, 'Chat.Read'), ', on your behalf): your one-to-one, group and meeting chats. It cannot send, edit or delete messages, and it does not read channel posts. Some organizations need an administrator to approve this first.')]
     : kind === 'sharepoint'
       ? [h('li', null, h('b', null, 'Read items in sites you can already open'), ' (', h('code', null, 'Sites.Read.All'), ', on your behalf). It cannot change, upload or delete anything. Some organizations need an administrator to approve this first.')]
       : [h('li', null, h('b', null, 'Read your files'), ' (', h('code', null, 'Files.Read'), '). It cannot upload, delete or change any file.')];
-  const dlg = openDialog(`Connect ${MS_NAME[kind]}`, h('div', { class: 'consent' },
-    h('p', null, 'You’ll be sent to Microsoft to sign in and approve access. Personal accounts (Outlook.com, Hotmail) and work or school accounts both work. This app never sees or stores your Microsoft password.'),
+  const dlg = openDialog(mode === 'qr' ? `Connect ${MS_NAME[kind]} via QR` : `Connect ${MS_NAME[kind]}`, h('div', { class: 'consent' },
+    mode === 'qr' ? qrIntro('Microsoft') : null,
+    h('p', null, kind === 'teams' || kind === 'sharepoint'
+      ? 'You’ll be sent to Microsoft to sign in and approve access. This needs a Microsoft 365 work or school account. This app never sees or stores your Microsoft password.'
+      : 'You’ll be sent to Microsoft to sign in and approve access. Personal accounts (Outlook.com, Hotmail) and work or school accounts both work. This app never sees or stores your Microsoft password.'),
     h('h3', null, 'What this app will ask Microsoft for'),
     h('ul', null, ...what, h('li', null, h('b', null, 'Your basic profile'), ' (', h('code', null, 'User.Read'), '), to label the source with your address.'), h('li', null, h('code', null, 'offline_access'), ', so syncs keep working after you sign out.')),
     h('h3', null, 'What happens next'),
     h('ul', null,
-      kind === 'outlook'
+      kind === 'teams'
+        ? h('li', null, 'Your chat messages from the last two years are copied into this app’s search index, one record per message. Later syncs read only what changed, including edits and deletions.')
+      : kind === 'outlook'
         ? h('li', null, 'Mail from the last two years, except Deleted Items and Junk, and attachments in supported formats, are copied into this app’s search index.')
         : h('li', null, `PDF, Word, Excel, CSV, text and image files in ${kind === 'sharepoint' ? 'the site’s document library' : 'your OneDrive'} are copied into this app’s search index. Later syncs pick up changes and deletions.`),
       h('li', null, 'The access token is stored encrypted. Every sync and record view is written to the audit log.'),
       h('li', null, 'Disconnecting deletes the stored access and every copied item. To also remove the app from your Microsoft account, use account.live.com/consent/Manage (personal) or myapps.microsoft.com (work).')),
     kind === 'sharepoint' ? field('SharePoint site address', site, 'Work or school accounts only. Copy it from the browser while the site is open.') : null,
     share.el,
-    h('div', { class: 'form-row' }, go)));
-  go.addEventListener('click', async () => {
+    h('div', { class: 'form-row' }, go, alt)));
+  const options = () => ({ siteUrl: site.value.trim(), ...share.value() });
+  const normal = async (btn: HTMLButtonElement) => {
     try {
-      const res = await busy(go, 'Opening Microsoft…', () => post<{ url: string }>('/api/connectors/microsoft/authorize', { kind, siteUrl: site.value.trim(), ...share.value() }));
+      const res = await busy(btn, 'Opening Microsoft…', () => post<{ url: string }>('/api/connectors/microsoft/authorize', { kind, ...options() }));
       location.href = res.data.url;
     } catch (e) { dlg.querySelector('.modal-body')!.append(alertBox(e instanceof ApiError ? e.message : 'Could not start the connection.')); }
-  });
+  };
+  const viaQr = () => {
+    if (kind === 'sharepoint' && !site.value.trim()) { dlg.querySelector('.modal-body')!.append(alertBox('Enter the SharePoint site address first.')); site.focus(); return; }
+    dlg.close(); qrConnect(kind, options(), () => startMicrosoft(kind));
+  };
+  go.addEventListener('click', () => mode === 'qr' ? viaQr() : normal(go));
+  alt.addEventListener('click', () => mode === 'qr' ? normal(alt) : viaQr());
 }
 
 /* ---------------- Google Drive consent ---------------- */
 
 const isOAuth = (type: string): boolean => type === 'gmail' || type === 'gdrive' || isMicrosoft(type);
 
-function startDrive() {
+function startDrive(mode: 'normal' | 'qr' = 'normal') {
   const share = sharingPicker();
-  const go = h('button', { type: 'button', class: 'button primary' }, 'Continue to Google');
-  const dlg = openDialog('Connect Google Drive', h('div', { class: 'consent' },
+  const go = h('button', { type: 'button', class: 'button primary' }, mode === 'qr' ? 'Show QR code' : 'Continue to Google');
+  const alt = h('button', { type: 'button', class: 'button secondary' }, mode === 'qr' ? 'Connect normally' : 'Connect via QR instead');
+  const dlg = openDialog(mode === 'qr' ? 'Connect Google Drive via QR' : 'Connect Google Drive', h('div', { class: 'consent' },
+    mode === 'qr' ? qrIntro('Google') : null,
     h('p', null, 'You’ll be sent to Google to sign in and approve access. This app never sees or stores your Google password.'),
     h('h3', null, 'What this app will ask Google for'),
     h('ul', null, h('li', null, h('b', null, 'See and download your Google Drive files'), ' (', h('code', null, 'drive.readonly'), '). It cannot upload, change, share or delete anything in your Drive.')),
@@ -637,13 +764,16 @@ function startDrive() {
       h('li', null, 'Later syncs read only what changed, including files that were trashed or removed.'),
       h('li', null, 'The access token is stored encrypted. Disconnecting revokes it at Google and deletes every copied file.')),
     share.el,
-    h('div', { class: 'form-row' }, go)));
-  go.addEventListener('click', async () => {
+    h('div', { class: 'form-row' }, go, alt)));
+  const normal = async (btn: HTMLButtonElement) => {
     try {
-      const res = await busy(go, 'Opening Google…', () => post<{ url: string }>('/api/connectors/gmail/authorize', { kind: 'gdrive', ...share.value() }));
+      const res = await busy(btn, 'Opening Google…', () => post<{ url: string }>('/api/connectors/gmail/authorize', { kind: 'gdrive', ...share.value() }));
       location.href = res.data.url;
     } catch (e) { dlg.querySelector('.modal-body')!.append(alertBox(e instanceof ApiError ? e.message : 'Could not start the connection.')); }
-  });
+  };
+  const viaQr = () => { dlg.close(); qrConnect('gdrive', share.value(), () => startDrive()); };
+  go.addEventListener('click', () => mode === 'qr' ? viaQr() : normal(go));
+  alt.addEventListener('click', () => mode === 'qr' ? normal(alt) : viaQr());
 }
 
 /**
@@ -745,7 +875,7 @@ async function providerCards(sources: Source[]) {
   if (!status.realSources || status.user?.isDemo) { replace(box); return; }
   const catalog = (await get<Connector[]>('/api/connectors').catch(() => null))?.data ?? [];
   const ids = status.identities || [];
-  const service = (type: string, name: string, what: string, start: () => void) => {
+  const service = (type: string, name: string, what: string, start: (mode: 'normal' | 'qr') => void) => {
     const c = catalog.find(x => x.type === type);
     const mine = sources.filter(x => x.type === type);
     const src = mine.find(x => x.isOwner) ?? mine[0];
@@ -753,13 +883,14 @@ async function providerCards(sources: Source[]) {
     const pill = !c ? h('span', { class: 'status-pill st-planned' }, 'Not available')
       : c.status === 'needs_configuration' ? h('span', { class: 'status-pill st-planned' }, 'Needs server setup')
       : life ? h('span', { class: `status-pill st-${life[1]}` }, life[0]) : h('span', { class: 'status-pill st-not_connected' }, 'Not connected');
-    const action = c && c.status === 'available' && can(status, 'sources.manage')
-      ? h('button', { type: 'button', class: 'button small secondary', on: { click: start } }, src?.isOwner ? 'Reconnect' : 'Connect') : null;
+    const allowed = c && c.status === 'available' && can(status, 'sources.manage');
+    const action = allowed ? h('button', { type: 'button', class: 'button small secondary', on: { click: () => start('normal') } }, src?.isOwner ? 'Reconnect' : 'Connect') : null;
+    const viaQr = allowed ? h('button', { type: 'button', class: 'button small secondary', 'aria-label': `Connect ${name} via QR`, on: { click: () => start('qr') } }, 'Connect via QR') : null;
     return h('li', { class: 'welcome-item' },
       h('div', null, h('b', null, name), h('p', { class: 'helper' }, what),
         src ? h('p', { class: 'helper' }, `${fmtNum(src.recordCount)} records${src.lastSuccessAt ? ` · last successful sync ${fmtDate(src.lastSuccessAt, true)}` : ''}${src.owner && !src.isOwner ? ` · connected by ${src.owner.name}` : ''}`) : null,
         c?.status === 'needs_configuration' && c.reason ? h('p', { class: 'hint' }, c.reason) : null),
-      h('div', { class: 'card-actions compact' }, pill, action));
+      h('div', { class: 'card-actions compact' }, pill, action, viaQr));
   };
   const account = (provider: 'google' | 'microsoft') => {
     const id = ids.find(i => i.provider === provider);
@@ -768,12 +899,13 @@ async function providerCards(sources: Source[]) {
     return null;
   };
   const googleList = () => [
-    service('gmail', 'Gmail', 'Read-only: email messages and attachments (gmail.readonly).', () => startGmail()),
-    service('gdrive', 'Google Drive', 'Read-only: Drive files; Docs and Sheets as text (drive.readonly).', () => startDrive())];
+    service('gmail', 'Gmail', 'Read-only: email messages and attachments (gmail.readonly).', (m) => startGmail(m)),
+    service('gdrive', 'Google Drive', 'Read-only: Drive files; Docs and Sheets as text (drive.readonly).', (m) => startDrive(m))];
   const msList = () => [
-    service('outlook', 'Outlook Mail', 'Read-only: mail, except Deleted Items and Junk (Mail.Read). Personal and work accounts.', () => startMicrosoft('outlook')),
-    service('onedrive', 'OneDrive', 'Read-only: files (Files.Read). Personal and work accounts.', () => startMicrosoft('onedrive')),
-    service('sharepoint', 'SharePoint', 'Read-only: one site\u2019s document library (Sites.Read.All). Work or school accounts only; some organizations need administrator consent.', () => startMicrosoft('sharepoint'))];
+    service('outlook', 'Outlook Mail', 'Read-only: mail, except Deleted Items and Junk (Mail.Read). Personal and work accounts.', (m) => startMicrosoft('outlook', m)),
+    service('onedrive', 'OneDrive', 'Read-only: files (Files.Read). Personal and work accounts.', (m) => startMicrosoft('onedrive', m)),
+    service('sharepoint', 'SharePoint', 'Read-only: one site\u2019s document library (Sites.Read.All). Work or school accounts only; some organizations need administrator consent.', (m) => startMicrosoft('sharepoint', m)),
+    service('teams', 'Microsoft Teams', 'Read-only: your chat messages (Chat.Read), not channel posts. Work or school accounts only; some organizations need administrator consent.', (m) => startMicrosoft('teams', m))];
   const chooser = (title: string, build: () => HTMLElement[]) => () => openDialog(title, h('div', null,
     h('p', null, 'Choose which services to connect. Each one opens the provider\u2019s own consent page, asks only for its read-only permission, and can be disconnected separately.'),
     h('ul', { class: 'plain-list welcome-list' }, ...build())), { wide: true });
@@ -784,7 +916,7 @@ async function providerCards(sources: Source[]) {
     can(status, 'sources.manage') ? h('button', { type: 'button', class: 'button primary', on: { click: chooser(button, build) } }, button) : null);
   replace(box, h('div', { class: 'provider-grid' },
     card('Google', 'Connect your Google account to retrieve authorized Gmail messages and Google Drive documents.', 'Connect Google Account', googleList, account('google')),
-    card('Microsoft', 'Connect your Microsoft account to retrieve authorized Outlook messages, OneDrive files and eligible SharePoint documents.', 'Connect Microsoft Account', msList, account('microsoft'))),
+    card('Microsoft', 'Connect your Microsoft account to retrieve authorized Outlook messages, OneDrive files, eligible SharePoint documents and Teams chats.', 'Connect Microsoft Account', msList, account('microsoft'))),
     h('p', { class: 'hint privacy-note' }, 'Your account credentials are never shared with this application. You control which permissions are granted and can disconnect access at any time.'));
 }
 

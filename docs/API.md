@@ -78,6 +78,15 @@ Every change is written to the audit log (`consent.granted`, `consent.changed`, 
 - `POST /api/connectors/phonelink/connect` with `{ acknowledged: true }`: creates a private `messages` source with `config.provider = "phonelink"` and starts the first sync.
 - `POST /api/sources/:id/sync` re-reads Phone Link. Searches also refresh it automatically when the file has changed.
 
+## Connect via QR
+
+Signed in, `sources.manage`, refused when real sources are off. See [QR-CONNECT.md](QR-CONNECT.md).
+- `POST /api/connections/qr/start` `{ app: gmail | gdrive | outlook | onedrive | sharepoint | teams, visibility?, shareWithRoles?, query?, siteUrl? }` returns `{ attemptId, status: "pending", matchCode, expiresAt, qrPath }`. The QR code encodes `<site><qrPath>`. Bound to the user and browser session; expires in 3 minutes; at most 5 open per person.
+- `GET /api/connections/qr/status/:attemptId` returns `{ status: pending | authorizing | connected | failed | cancelled | expired, account, sourceId, error, ... }`. Same session only.
+- `POST /api/connections/qr/cancel` `{ attemptId }`.
+- Phone pages (no session): `GET /qr/:reference` (shows the account and match number; changes nothing), `POST /qr/:reference/continue` (single use; 303 to the provider's consent page), `POST /qr/:reference/cancel`.
+- The provider returns to the existing `/oauth/google/callback` or `/oauth/microsoft/callback`, which finish a QR attempt by its OAuth state rather than by the browser's session.
+
 ## Android companion app
 
 Website (signed in, `sources.manage`; refused when real sources are off):
